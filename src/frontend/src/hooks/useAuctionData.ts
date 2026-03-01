@@ -13,6 +13,8 @@ export interface AuctionData {
   pausePolling: (ms: number) => void;
 }
 
+const MAX_CONSECUTIVE_ERRORS = 3;
+
 export function useAuctionData(intervalMs = 1500): AuctionData {
   const { actor, isFetching } = useActor();
   const [auctionState, setAuctionState] = useState<AuctionState | null>(null);
@@ -21,13 +23,31 @@ export function useAuctionData(intervalMs = 1500): AuctionData {
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pausedUntilRef = useRef<number>(0);
+  const consecutiveErrorsRef = useRef(0);
+  const isFetchingDataRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  const clearTimers = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    if (retryTimerRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+  }, []);
 
   const fetchAll = useCallback(async () => {
     if (!actor) return;
-    // Skip fetch if polling is paused
     if (Date.now() < pausedUntilRef.current) return;
+    if (isFetchingDataRef.current) return;
+
+    isFetchingDataRef.current = true;
     try {
       const [state, teamsData, playersData, dashData] = await Promise.all([
         actor.getAuctionState(),
@@ -35,35 +55,75 @@ export function useAuctionData(intervalMs = 1500): AuctionData {
         actor.getPlayers(),
         actor.getDashboard(),
       ]);
+      if (!mountedRef.current) return;
       setAuctionState(state);
       setTeams(teamsData);
       setPlayers(playersData);
       setDashboard(dashData);
       setError(null);
+      consecutiveErrorsRef.current = 0;
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to fetch data");
+      if (!mountedRef.current) return;
+      consecutiveErrorsRef.current += 1;
+      const msg = err instanceof Error ? err.message : "Failed to fetch data";
+
+      if (consecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
+        setError(msg);
+      }
+
+      // On repeated errors, back off and retry automatically
+      if (consecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
+        clearTimers();
+        const backoffMs = Math.min(3000 * consecutiveErrorsRef.current, 15000);
+        retryTimerRef.current = setTimeout(() => {
+          if (!mountedRef.current) return;
+          consecutiveErrorsRef.current = 0;
+          setError(null);
+          isFetchingDataRef.current = false;
+          fetchAll().then(() => {
+            if (mountedRef.current && !intervalRef.current) {
+              intervalRef.current = setInterval(fetchAll, intervalMs);
+            }
+          });
+        }, backoffMs);
+      }
     } finally {
-      setIsLoading(false);
+      if (mountedRef.current) setIsLoading(false);
+      isFetchingDataRef.current = false;
     }
-  }, [actor]);
+  }, [actor, intervalMs, clearTimers]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!actor || isFetching) return;
 
-    fetchAll();
+    consecutiveErrorsRef.current = 0;
+    setError(null);
+    isFetchingDataRef.current = false;
+    clearTimers();
 
+    fetchAll();
     intervalRef.current = setInterval(fetchAll, intervalMs);
 
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, [actor, isFetching, fetchAll, intervalMs]);
+    return clearTimers;
+  }, [actor, isFetching, fetchAll, intervalMs, clearTimers]);
 
   const pausePolling = useCallback((ms: number) => {
     pausedUntilRef.current = Date.now() + ms;
   }, []);
+
+  const refetch = useCallback(async () => {
+    consecutiveErrorsRef.current = 0;
+    setError(null);
+    isFetchingDataRef.current = false;
+    await fetchAll();
+  }, [fetchAll]);
 
   return {
     auctionState,
@@ -72,7 +132,7 @@ export function useAuctionData(intervalMs = 1500): AuctionData {
     dashboard,
     isLoading,
     error,
-    refetch: fetchAll,
+    refetch,
     pausePolling,
   };
 }

@@ -628,10 +628,76 @@ interface BidHistoryEntry {
   prevLeadingTeamId: bigint | null;
 }
 
+// ─── Connecting Screen ────────────────────────────────────────────────────────
+function ConnectingScreen({ onRetry }: { onRetry: () => void }) {
+  const [dots, setDots] = useState(".");
+  useEffect(() => {
+    const t = setInterval(
+      () => setDots((d) => (d.length >= 3 ? "." : `${d}.`)),
+      500,
+    );
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center broadcast-overlay">
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background:
+            "radial-gradient(ellipse 60% 50% at 50% 50%, oklch(0.14 0.06 265 / 0.6) 0%, transparent 70%)",
+        }}
+      />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="relative z-10 text-center max-w-sm px-6"
+      >
+        <div
+          className="w-16 h-16 mx-auto mb-6 flex items-center justify-center"
+          style={{
+            background: "oklch(0.78 0.165 85 / 0.1)",
+            border: "1px solid oklch(0.78 0.165 85 / 0.3)",
+          }}
+        >
+          <Loader2
+            size={28}
+            className="animate-spin"
+            style={{ color: "oklch(0.78 0.165 85)" }}
+          />
+        </div>
+        <h2
+          className="font-broadcast text-xl tracking-wider mb-2"
+          style={{ color: "oklch(0.78 0.165 85)" }}
+        >
+          CONNECTING{dots}
+        </h2>
+        <p className="text-sm mb-6" style={{ color: "oklch(0.45 0.02 90)" }}>
+          Establishing connection to the auction network. This may take a few
+          seconds.
+        </p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="flex items-center gap-2 mx-auto px-5 py-2.5 font-broadcast text-sm tracking-wider transition-opacity hover:opacity-80"
+          style={{
+            background: "oklch(0.14 0.04 265)",
+            border: "1px solid oklch(0.22 0.04 265)",
+            color: "oklch(0.65 0.02 90)",
+          }}
+        >
+          <RotateCcw size={14} />
+          RETRY NOW
+        </button>
+      </motion.div>
+    </div>
+  );
+}
+
 // ─── Main Admin Panel ─────────────────────────────────────────────────────────
 function AdminPanel() {
   const navigate = useNavigate();
-  const { actor } = useActor();
+  const { actor, isFetching: actorFetching } = useActor();
   const {
     auctionState,
     teams,
@@ -915,7 +981,12 @@ function AdminPanel() {
   const upcomingPlayers = players.filter((p) => p.status === "upcoming");
   const soldPlayers = players.filter((p) => p.status === "sold");
 
-  // Full-page error state
+  // Show connecting screen while actor is initialising or on first load with no data
+  if ((actorFetching || !actor) && teams.length === 0) {
+    return <ConnectingScreen onRetry={() => window.location.reload()} />;
+  }
+
+  // Full-page error state — only show if we truly have no data after retries
   if (error && !isLoading && teams.length === 0) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center broadcast-overlay">
@@ -953,19 +1024,33 @@ function AdminPanel() {
             The canister may be initialising or unreachable. Check your network
             and try again.
           </p>
-          <button
-            type="button"
-            onClick={() => refetch()}
-            className="flex items-center gap-2 mx-auto px-5 py-2.5 font-broadcast text-sm tracking-wider transition-opacity hover:opacity-80"
-            style={{
-              background:
-                "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))",
-              color: "oklch(0.08 0.025 265)",
-            }}
-          >
-            <RotateCcw size={14} />
-            RETRY
-          </button>
+          <div className="flex gap-3 justify-center">
+            <button
+              type="button"
+              onClick={() => refetch()}
+              className="flex items-center gap-2 px-5 py-2.5 font-broadcast text-sm tracking-wider transition-opacity hover:opacity-80"
+              style={{
+                background:
+                  "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))",
+                color: "oklch(0.08 0.025 265)",
+              }}
+            >
+              <RotateCcw size={14} />
+              RETRY
+            </button>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="flex items-center gap-2 px-5 py-2.5 font-broadcast text-sm tracking-wider transition-opacity hover:opacity-80"
+              style={{
+                background: "oklch(0.14 0.04 265)",
+                border: "1px solid oklch(0.22 0.04 265)",
+                color: "oklch(0.65 0.02 90)",
+              }}
+            >
+              RELOAD PAGE
+            </button>
+          </div>
         </motion.div>
       </div>
     );
