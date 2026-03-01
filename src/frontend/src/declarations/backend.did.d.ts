@@ -10,44 +10,55 @@ import type { ActorMethod } from '@icp-sdk/core/agent';
 import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
+export type Amount = bigint;
 export interface AuctionState {
-  'currentPlayerId' : [] | [bigint],
-  'leadingTeamId' : [] | [bigint],
+  'currentPlayerId' : [] | [PlayerId],
+  'leadingTeamId' : [] | [TeamId],
   'isActive' : boolean,
-  'currentBid' : bigint,
+  'currentBid' : Amount,
 }
+export type Category = { 'bowler' : null } |
+  { 'allrounder' : null } |
+  { 'batsman' : null };
 export interface Dashboard {
   'remainingPlayers' : bigint,
-  'totalSpent' : bigint,
+  'totalSpent' : Amount,
   'mostExpensivePlayer' : [] | [Player],
   'soldPlayers' : bigint,
 }
 export type ExternalBlob = Uint8Array;
 export interface Player {
-  'id' : bigint,
-  'status' : string,
-  'soldTo' : [] | [bigint],
+  'id' : PlayerId,
+  'status' : Status,
+  'soldTo' : [] | [TeamId],
   'name' : string,
-  'soldPrice' : [] | [bigint],
+  'soldPrice' : [] | [Amount],
   'imageUrl' : string,
-  'category' : string,
-  'rating' : bigint,
-  'basePrice' : bigint,
+  'category' : Category,
+  'rating' : Rating,
+  'basePrice' : Amount,
 }
+export type PlayerId = bigint;
 export interface PlayerWithTeam { 'player' : Player, 'team' : [] | [Team] }
+export type Rating = bigint;
 export type Result = { 'ok' : null } |
   { 'err' : string };
+export type Status = { 'upcoming' : null } |
+  { 'live' : null } |
+  { 'sold' : null };
 export interface Team {
-  'id' : bigint,
-  'purseAmountLeft' : bigint,
+  'id' : TeamId,
+  'purseAmountLeft' : Amount,
   'teamIconPlayer' : string,
-  'teamLogo' : [] | [ExternalBlob],
+  'teamLogo' : TeamLogo,
   'isTeamLocked' : boolean,
   'ownerName' : string,
   'name' : string,
-  'purseAmountTotal' : bigint,
+  'purseAmountTotal' : Amount,
   'numberOfPlayers' : bigint,
 }
+export type TeamId = bigint;
+export type TeamLogo = [] | [ExternalBlob];
 export interface _CaffeineStorageCreateCertificateResult {
   'method' : string,
   'blob_hash' : string,
@@ -75,29 +86,31 @@ export interface _SERVICE {
     _CaffeineStorageRefillResult
   >,
   '_caffeineStorageUpdateGatewayPrincipals' : ActorMethod<[], undefined>,
-  'addPlayer' : ActorMethod<[string, string, bigint, string, bigint], Result>,
+  'addPlayer' : ActorMethod<[string, Category, Amount, string, Rating], Result>,
   'adminLogin' : ActorMethod<[string], boolean>,
-  'deletePlayer' : ActorMethod<[bigint], Result>,
-  'editTeamPurse' : ActorMethod<[bigint, bigint], Result>,
+  'deletePlayer' : ActorMethod<[PlayerId], Result>,
+  'editTeamPurse' : ActorMethod<[TeamId, Amount], Result>,
   'getAuctionState' : ActorMethod<[], AuctionState>,
   'getDashboard' : ActorMethod<[], Dashboard>,
-  'getPlayerById' : ActorMethod<[bigint], [] | [Player]>,
+  'getPlayerById' : ActorMethod<[PlayerId], [] | [Player]>,
   'getPlayers' : ActorMethod<[], Array<Player>>,
-  'getPlayersByCategory' : ActorMethod<[string], Array<Player>>,
-  'getRemainingPurse' : ActorMethod<[bigint], [] | [bigint]>,
+  'getPlayersByCategory' : ActorMethod<[Category], Array<Player>>,
+  'getRemainingPurse' : ActorMethod<[TeamId], [] | [Amount]>,
   'getResults' : ActorMethod<[], Array<PlayerWithTeam>>,
-  'getTeamById' : ActorMethod<[bigint], [] | [Team]>,
+  'getTeamById' : ActorMethod<[TeamId], [] | [Team]>,
   'getTeams' : ActorMethod<[], Array<Team>>,
-  'placeBid' : ActorMethod<[bigint], Result>,
+  'initialize' : ActorMethod<[], boolean>,
+  'placeBid' : ActorMethod<[TeamId], Result>,
   'resetAuction' : ActorMethod<[], undefined>,
-  'selectPlayer' : ActorMethod<[bigint], Result>,
+  'selectPlayer' : ActorMethod<[PlayerId], Result>,
   'sellPlayer' : ActorMethod<[], Result>,
+  'unsellPlayer' : ActorMethod<[PlayerId], Result>,
   'updatePlayer' : ActorMethod<
-    [bigint, string, string, bigint, string, bigint],
+    [PlayerId, string, Category, Amount, string, Rating],
     Result
   >,
-  'updateTeam' : ActorMethod<[bigint, string, string, string], Result>,
-  'uploadTeamLogo' : ActorMethod<[bigint, ExternalBlob], Result>,
+  'updateTeam' : ActorMethod<[TeamId, string, string, string], Result>,
+  'uploadTeamLogo' : ActorMethod<[TeamId, ExternalBlob], Result>,
 }
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];

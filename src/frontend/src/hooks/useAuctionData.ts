@@ -13,15 +13,9 @@ export interface AuctionData {
   pausePolling: (ms: number) => void;
 }
 
-// Mobile-hotspot tolerant settings:
-// - Poll every 5 seconds (gives the network time to breathe)
-// - Make 4 calls in parallel (not sequential) so total wait time = slowest single call
-// - Show error only after 8 consecutive failures
-// - Use a local in-memory cache so the UI never goes blank
-const DEFAULT_POLL_MS = 5000;
 const MAX_CONSECUTIVE_ERRORS = 8;
 
-export function useAuctionData(intervalMs = DEFAULT_POLL_MS): AuctionData {
+export function useAuctionData(intervalMs = 3000): AuctionData {
   const { actor, isFetching } = useActor();
   const [auctionState, setAuctionState] = useState<AuctionState | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -55,9 +49,7 @@ export function useAuctionData(intervalMs = DEFAULT_POLL_MS): AuctionData {
 
     isFetchingDataRef.current = true;
     try {
-      // Fire all 4 calls in PARALLEL — total wait = slowest single call, not sum of all 4.
-      // This is critical for mobile hotspot: 4 sequential calls at 2s each = 8s total,
-      // but 4 parallel calls at 2s each = 2s total.
+      // Parallel fetch — total wait = slowest single call
       const [state, teamsData, playersData, dashData] = await Promise.all([
         actor.getAuctionState(),
         actor.getTeams(),
@@ -77,16 +69,12 @@ export function useAuctionData(intervalMs = DEFAULT_POLL_MS): AuctionData {
       if (!mountedRef.current) return;
       consecutiveErrorsRef.current += 1;
 
-      // Only surface error to UI after many consecutive failures.
-      // Brief hotspot hiccups (1-7 failures in a row) are completely invisible.
       if (consecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
         const msg =
           err instanceof Error ? err.message : "Failed to connect to server";
         setError(msg);
-      }
 
-      // Exponential backoff capped at 15s
-      if (consecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
+        // Exponential backoff capped at 15s
         clearTimers();
         const backoffMs = Math.min(
           3000 * (consecutiveErrorsRef.current - MAX_CONSECUTIVE_ERRORS + 1),

@@ -2,7 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { ChevronRight, Monitor, Shield } from "lucide-react";
 import { motion } from "motion/react";
 
-// ─── League settings helpers (shared with SettingsPage) ───────────────────────
+// ─── League settings helpers ──────────────────────────────────────────────────
 export interface LeagueSettings {
   shortName: string;
   fullName: string;
@@ -35,7 +35,7 @@ export function saveLeagueSettings(s: LeagueSettings) {
   localStorage.setItem(LEAGUE_KEY, JSON.stringify(s));
 }
 
-// ─── Team logos helpers (shared with AdminPage/SettingsPage) ──────────────────
+// ─── Team logos helpers ───────────────────────────────────────────────────────
 export const TEAM_LOGOS_KEY = "spl_team_logos";
 
 export function getTeamLogos(): Record<string, string> {
@@ -52,7 +52,7 @@ export function saveTeamLogos(logos: Record<string, string>) {
   localStorage.setItem(TEAM_LOGOS_KEY, JSON.stringify(logos));
 }
 
-// ─── Owner photos helpers (shared with SettingsPage/SquadsPage) ───────────────
+// ─── Owner photos helpers ─────────────────────────────────────────────────────
 export const OWNER_PHOTOS_KEY = "spl_owner_photos";
 
 export function getOwnerPhotos(): Record<string, string> {
@@ -69,7 +69,7 @@ export function saveOwnerPhotos(photos: Record<string, string>) {
   localStorage.setItem(OWNER_PHOTOS_KEY, JSON.stringify(photos));
 }
 
-// ─── Icon player photos helpers (shared with SettingsPage/SquadsPage) ─────────
+// ─── Icon player photos helpers ───────────────────────────────────────────────
 export const ICON_PHOTOS_KEY = "spl_icon_photos";
 
 export function getIconPhotos(): Record<string, string> {
@@ -86,7 +86,7 @@ export function saveIconPhotos(photos: Record<string, string>) {
   localStorage.setItem(ICON_PHOTOS_KEY, JSON.stringify(photos));
 }
 
-// ─── Live Layout helpers (shared with SettingsPage/LivePage) ──────────────────
+// ─── Live Layout helpers ──────────────────────────────────────────────────────
 export interface LiveLayoutConfig {
   playerImageWidth: number;
   playerImageHeight: number;
@@ -149,7 +149,7 @@ export default function LandingPage() {
             "radial-gradient(ellipse 80% 60% at 50% 30%, oklch(0.16 0.06 255 / 0.8) 0%, transparent 70%)",
         }}
       />
-      {/* Decorative grid lines */}
+      {/* Decorative grid */}
       <div
         className="absolute inset-0 pointer-events-none opacity-[0.07]"
         style={{

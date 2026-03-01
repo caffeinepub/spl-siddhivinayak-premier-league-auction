@@ -1,9 +1,9 @@
 import { useParams } from "@tanstack/react-router";
-import { Crown, Loader2, Star, Trophy, UserSquare2 } from "lucide-react";
+import { Crown, Star } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import type { Player, Team } from "../backend.d";
-import { useAuctionData } from "../hooks/useAuctionData";
+import { useActor } from "../hooks/useActor";
 import {
   getIconPhotos,
   getLeagueSettings,
@@ -11,348 +11,261 @@ import {
   getTeamLogos,
 } from "./LandingPage";
 
-// ─── Category colors ──────────────────────────────────────────────────────────
-const CATEGORY_COLORS: Record<string, string> = {
-  Batsman: "oklch(0.7 0.15 140)",
-  Bowler: "oklch(0.65 0.18 25)",
-  Allrounder: "oklch(0.78 0.165 85)",
-};
-
-// ─── Owner Slot ───────────────────────────────────────────────────────────────
-function OwnerSlot({ team, photoUrl }: { team: Team; photoUrl: string }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      className="relative flex flex-col items-center p-3 gap-2"
-      style={{
-        background:
-          "linear-gradient(135deg, oklch(0.16 0.07 85 / 0.25) 0%, oklch(0.12 0.04 255 / 0.8) 100%)",
-        border: "1px solid oklch(0.78 0.165 85 / 0.4)",
-        boxShadow: "inset 0 0 20px oklch(0.78 0.165 85 / 0.05)",
-      }}
-    >
-      <div
-        className="absolute top-2 right-2 px-1.5 py-0.5 flex items-center gap-1 font-broadcast tracking-widest"
-        style={{
-          background: "oklch(0.78 0.165 85 / 0.18)",
-          border: "1px solid oklch(0.78 0.165 85 / 0.5)",
-          color: "oklch(0.88 0.18 88)",
-          fontSize: "8px",
-        }}
-      >
-        <Crown size={7} />
-        OWNER
-      </div>
-      <div
-        className="w-16 h-20 overflow-hidden flex items-center justify-center flex-shrink-0"
-        style={{
-          background: "oklch(0.14 0.05 255)",
-          border: "1px solid oklch(0.78 0.165 85 / 0.2)",
-        }}
-      >
-        {photoUrl ? (
-          <img
-            src={photoUrl}
-            alt={team.ownerName}
-            className="w-full h-full object-cover"
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = "none";
-            }}
-          />
-        ) : (
-          <Crown size={28} style={{ color: "oklch(0.78 0.165 85)" }} />
-        )}
-      </div>
-      <div className="text-center w-full">
-        <div
-          className="font-broadcast text-xs tracking-wide truncate"
-          style={{ color: "oklch(0.92 0.02 90)" }}
-          title={team.ownerName}
-        >
-          {team.ownerName}
-        </div>
-        <div
-          className="font-digital text-xs mt-0.5"
-          style={{ color: "oklch(0.78 0.165 85)" }}
-        >
-          200 pts
-        </div>
-      </div>
-    </motion.div>
-  );
+// ─── helpers ──────────────────────────────────────────────────────────────────
+function fmt(n: bigint | number) {
+  return Number(n).toLocaleString();
 }
 
-// ─── Icon Slot ────────────────────────────────────────────────────────────────
-function IconSlot({ team, photoUrl }: { team: Team; photoUrl: string }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ delay: 0.05 }}
-      className="relative flex flex-col items-center p-3 gap-2"
-      style={{
-        background:
-          "linear-gradient(135deg, oklch(0.16 0.06 75 / 0.22) 0%, oklch(0.12 0.04 255 / 0.8) 100%)",
-        border: "1px solid oklch(0.78 0.165 85 / 0.3)",
-      }}
-    >
-      <div
-        className="absolute top-2 right-2 px-1.5 py-0.5 flex items-center gap-1 font-broadcast tracking-widest"
-        style={{
-          background: "oklch(0.65 0.14 75 / 0.18)",
-          border: "1px solid oklch(0.65 0.14 75 / 0.45)",
-          color: "oklch(0.82 0.15 82)",
-          fontSize: "8px",
-        }}
-      >
-        <Star size={7} />
-        ICON
-      </div>
-      <div
-        className="w-16 h-20 overflow-hidden flex items-center justify-center flex-shrink-0"
-        style={{
-          background: "oklch(0.14 0.05 255)",
-          border: "1px solid oklch(0.65 0.14 75 / 0.2)",
-        }}
-      >
-        {photoUrl ? (
-          <img
-            src={photoUrl}
-            alt={team.teamIconPlayer}
-            className="w-full h-full object-cover"
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = "none";
-            }}
-          />
-        ) : (
-          <Star size={28} style={{ color: "oklch(0.65 0.14 75)" }} />
-        )}
-      </div>
-      <div className="text-center w-full">
-        <div
-          className="font-broadcast text-xs tracking-wide truncate"
-          style={{ color: "oklch(0.92 0.02 90)" }}
-          title={team.teamIconPlayer}
-        >
-          {team.teamIconPlayer}
-        </div>
-        <div
-          className="font-digital text-xs mt-0.5"
-          style={{ color: "oklch(0.65 0.14 75)" }}
-        >
-          300 pts
-        </div>
-      </div>
-    </motion.div>
-  );
+function getCategoryColor(cat: string) {
+  const c = cat.toLowerCase();
+  if (c === "batsman") return "oklch(0.7 0.15 140)";
+  if (c === "bowler") return "oklch(0.65 0.18 25)";
+  if (c === "allrounder") return "oklch(0.78 0.165 85)";
+  return "oklch(0.55 0.02 90)";
 }
 
-// ─── Filled Auction Slot ──────────────────────────────────────────────────────
-function FilledAuctionSlot({
-  player,
-  index,
-}: {
-  player: Player;
-  index: number;
-}) {
-  const categoryColor =
-    CATEGORY_COLORS[player.category] ?? "oklch(0.55 0.02 90)";
+function teamInitials(name: string) {
+  return name
+    .split(" ")
+    .map((w) => w[0] ?? "")
+    .slice(0, 3)
+    .join("")
+    .toUpperCase();
+}
+
+// ─── Player card ──────────────────────────────────────────────────────────────
+interface PlayerCardProps {
+  slotLabel: string;
+  name: string;
+  photo: string;
+  subLabel: string;
+  price: string;
+  priceColor: string;
+  accentColor: string;
+  icon?: React.ReactNode;
+  isEmpty?: boolean;
+}
+
+function PlayerCard({
+  slotLabel,
+  name,
+  photo,
+  subLabel,
+  price,
+  priceColor,
+  accentColor,
+  icon,
+  isEmpty = false,
+}: PlayerCardProps) {
   return (
     <motion.div
-      initial={{ opacity: 0, scale: 0.93 }}
-      animate={{ opacity: 1, scale: 1 }}
-      transition={{ delay: 0.06 * index }}
-      className="relative flex flex-col items-center p-3 gap-2"
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: isEmpty ? 0.5 : 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="flex flex-col"
       style={{
-        background: "oklch(0.12 0.025 255)",
-        border: "1px solid oklch(0.25 0.03 255)",
+        background: isEmpty ? "oklch(0.09 0.02 255)" : "oklch(0.11 0.03 255)",
+        border: isEmpty
+          ? "1px dashed oklch(0.2 0.04 255)"
+          : `1px solid ${accentColor}33`,
       }}
     >
+      {/* Slot label */}
       <div
-        className="absolute top-2 left-2 px-1.5 py-0.5 font-broadcast tracking-widest"
+        className="px-2 py-1 font-broadcast tracking-widest"
         style={{
-          background: `${categoryColor}18`,
-          border: `1px solid ${categoryColor}40`,
-          color: categoryColor,
-          fontSize: "7px",
+          fontSize: 8,
+          color: isEmpty ? "oklch(0.25 0.02 90)" : accentColor,
+          background: isEmpty ? "oklch(0.1 0.02 255)" : `${accentColor}18`,
+          borderBottom: `1px solid ${accentColor}22`,
         }}
       >
-        {player.category.toUpperCase()}
+        {slotLabel}
       </div>
+
+      {/* Photo */}
       <div
-        className="w-16 h-20 overflow-hidden flex items-center justify-center flex-shrink-0"
         style={{
-          border: "1px solid oklch(0.25 0.03 255)",
-          background: "oklch(0.14 0.04 255)",
+          width: "100%",
+          aspectRatio: "3/4",
+          overflow: "hidden",
+          background: "oklch(0.12 0.03 255)",
+          position: "relative",
         }}
       >
-        {player.imageUrl ? (
-          <img
-            src={player.imageUrl}
-            alt={player.name}
-            className="w-full h-full object-cover"
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = "none";
-            }}
-          />
-        ) : (
-          <span
-            className="font-broadcast"
-            style={{ color: categoryColor, fontSize: "24px" }}
+        {isEmpty ? (
+          <div
+            className="w-full h-full flex items-center justify-center"
+            style={{ color: "oklch(0.2 0.04 255)" }}
           >
-            {player.name.charAt(0)}
-          </span>
+            <span className="font-broadcast" style={{ fontSize: 24 }}>
+              ?
+            </span>
+          </div>
+        ) : photo ? (
+          <img
+            src={photo}
+            alt={name}
+            style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          />
+        ) : (
+          <div
+            className="w-full h-full flex items-center justify-center font-broadcast font-black"
+            style={{ color: "oklch(0.25 0.04 255)", fontSize: 32 }}
+          >
+            {name[0]?.toUpperCase()}
+          </div>
+        )}
+
+        {/* Icon badge */}
+        {icon && !isEmpty && (
+          <div
+            className="absolute top-1.5 right-1.5 rounded-full p-1"
+            style={{ background: `${accentColor}dd` }}
+          >
+            {icon}
+          </div>
+        )}
+
+        {/* Bottom accent bar */}
+        {!isEmpty && (
+          <div
+            className="absolute bottom-0 left-0 right-0"
+            style={{ height: 2, background: accentColor }}
+          />
         )}
       </div>
-      <div className="text-center w-full">
+
+      {/* Info */}
+      <div className="p-2 space-y-0.5">
         <div
-          className="font-broadcast text-xs tracking-wide truncate"
-          style={{ color: "oklch(0.92 0.02 90)" }}
-          title={player.name}
+          className="font-broadcast tracking-wide leading-tight"
+          style={{
+            fontSize: 11,
+            color: isEmpty ? "oklch(0.3 0.02 90)" : "oklch(0.88 0.015 90)",
+          }}
         >
-          {player.name}
+          {isEmpty ? "SLOT OPEN" : name.toUpperCase()}
         </div>
-        <div
-          className="font-digital text-xs mt-0.5"
-          style={{ color: "oklch(0.7 0.15 140)" }}
-        >
-          {Number(player.soldPrice ?? 0).toLocaleString()} pts
-        </div>
+        {!isEmpty && (
+          <>
+            <div
+              className="font-broadcast tracking-widest"
+              style={{ fontSize: 8, color: "oklch(0.45 0.02 90)" }}
+            >
+              {subLabel}
+            </div>
+            <div
+              className="font-digital"
+              style={{ fontSize: 10, color: priceColor }}
+            >
+              {price}
+            </div>
+          </>
+        )}
       </div>
     </motion.div>
   );
 }
 
-// ─── Empty Auction Slot ───────────────────────────────────────────────────────
-function EmptyAuctionSlot({ index }: { index: number }) {
-  return (
-    <div
-      className="flex flex-col items-center justify-center p-3 gap-2"
-      style={{
-        background: "oklch(0.09 0.02 255)",
-        border: "1px dashed oklch(0.22 0.025 255)",
-        minHeight: "148px",
-      }}
-    >
-      <UserSquare2
-        size={22}
-        style={{ color: "oklch(0.28 0.02 255)", opacity: 0.7 }}
-      />
-      <div
-        className="font-broadcast tracking-widest"
-        style={{ color: "oklch(0.3 0.02 255)", fontSize: "9px" }}
-      >
-        SLOT {index + 1}
-      </div>
-      <div
-        className="font-digital"
-        style={{ color: "oklch(0.28 0.02 255)", fontSize: "9px" }}
-      >
-        OPEN
-      </div>
-    </div>
-  );
-}
-
-// ─── Team Page ────────────────────────────────────────────────────────────────
+// ─── Main TeamPage ────────────────────────────────────────────────────────────
 export default function TeamPage() {
-  const { teamId } = useParams({ from: "/team/$teamId" });
-  const { teams, players, isLoading } = useAuctionData(10000);
-
+  const params = useParams({ from: "/team/$teamId" });
+  const teamId = BigInt(params.teamId ?? "0");
+  const { actor } = useActor();
+  const league = getLeagueSettings();
   const teamLogos = getTeamLogos();
   const ownerPhotos = getOwnerPhotos();
   const iconPhotos = getIconPhotos();
-  const leagueSettings = getLeagueSettings();
 
-  const team = teams.find((t) => String(t.id) === teamId) ?? null;
-  const logoUrl = team ? (teamLogos[teamId] ?? "") : "";
-  const ownerPhotoUrl = team ? (ownerPhotos[teamId] ?? "") : "";
-  const iconPhotoUrl = team ? (iconPhotos[teamId] ?? "") : "";
+  const [team, setTeam] = useState<Team | null>(null);
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
-  // Set page title
   useEffect(() => {
-    if (team) {
-      document.title = `${team.name} — ${leagueSettings.shortName}`;
-    } else {
-      document.title = leagueSettings.shortName || "SPL";
-    }
-    return () => {
-      document.title = leagueSettings.shortName || "SPL";
+    const fetchData = async () => {
+      if (!actor) return;
+      try {
+        const [t, ps] = await Promise.all([
+          actor.getTeamById(teamId),
+          actor.getPlayers(),
+        ]);
+        setTeam(t);
+        setPlayers(ps);
+        setLastUpdated(new Date());
+      } finally {
+        setLoading(false);
+      }
     };
-  }, [team, leagueSettings.shortName]);
 
-  const soldToTeam = team
-    ? players.filter(
-        (p) => p.status === "sold" && String(p.soldTo) === String(team.id),
-      )
-    : [];
+    fetchData();
+    const interval = setInterval(fetchData, 10000);
+    return () => clearInterval(interval);
+  }, [actor, teamId]);
 
-  const auctionSlots: Array<{ slotKey: string; player: Player | null }> =
-    Array.from({ length: 7 }, (_, i) => ({
-      slotKey: soldToTeam[i]
-        ? `player-${String(soldToTeam[i].id)}`
-        : `empty-${i}`,
-      player: soldToTeam[i] ?? null,
-    }));
+  const teamLogoUrl = teamLogos[String(teamId)] ?? "";
+  const ownerPhotoUrl = ownerPhotos[String(teamId)] ?? "";
+  const iconPhotoUrl = iconPhotos[String(teamId)] ?? "";
 
-  // Loading state
-  if (isLoading && teams.length === 0) {
+  const boughtPlayers = players
+    .filter((p) => p.status === "sold" && p.soldTo === teamId)
+    .sort((a, b) => Number(b.soldPrice ?? 0n) - Number(a.soldPrice ?? 0n));
+
+  const purseUsed = team
+    ? Number(team.purseAmountTotal) - Number(team.purseAmountLeft)
+    : 0;
+
+  const pctLeft =
+    team && Number(team.purseAmountTotal) > 0
+      ? (Number(team.purseAmountLeft) / Number(team.purseAmountTotal)) * 100
+      : 0;
+
+  if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center broadcast-overlay">
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            background:
-              "radial-gradient(ellipse 60% 50% at 50% 50%, oklch(0.15 0.06 255 / 0.5) 0%, transparent 70%)",
-          }}
-        />
-        <div className="relative z-10 text-center">
-          <Loader2
-            size={32}
-            className="animate-spin mx-auto mb-4"
-            style={{ color: "oklch(0.78 0.165 85 / 0.6)" }}
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{
+              duration: 1.5,
+              repeat: Number.POSITIVE_INFINITY,
+              ease: "linear",
+            }}
+            className="w-10 h-10 rounded-full border-2 border-t-transparent"
+            style={{ borderColor: "oklch(0.78 0.165 85)" }}
           />
-          <div
-            className="font-broadcast text-sm tracking-widest"
-            style={{ color: "oklch(0.42 0.02 90)" }}
+          <p
+            className="font-broadcast tracking-widest text-sm"
+            style={{ color: "oklch(0.55 0.02 90)" }}
           >
-            LOADING SQUAD…
-          </div>
+            LOADING TEAM...
+          </p>
         </div>
       </div>
     );
   }
 
-  // Team not found
-  if (!team && teams.length > 0) {
+  if (!team) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
-          <Trophy
-            size={48}
-            className="mx-auto mb-4 opacity-20"
-            style={{ color: "oklch(0.78 0.165 85)" }}
-          />
           <div
-            className="font-broadcast text-xl tracking-widest"
-            style={{ color: "oklch(0.42 0.02 90)" }}
+            className="font-broadcast text-2xl tracking-widest mb-2"
+            style={{ color: "oklch(0.65 0.18 25)" }}
           >
             TEAM NOT FOUND
           </div>
+          <p
+            className="font-broadcast text-sm"
+            style={{ color: "oklch(0.45 0.02 90)" }}
+          >
+            Team ID {String(teamId)} does not exist.
+          </p>
         </div>
       </div>
     );
   }
-
-  const initials = team
-    ? team.name
-        .split(" ")
-        .map((w) => w[0])
-        .join("")
-        .slice(0, 2)
-        .toUpperCase()
-    : "??";
 
   return (
     <div className="min-h-screen bg-background broadcast-overlay">
@@ -361,279 +274,266 @@ export default function TeamPage() {
         className="fixed inset-0 pointer-events-none"
         style={{
           background:
-            "radial-gradient(ellipse 80% 60% at 50% 20%, oklch(0.14 0.06 255 / 0.6) 0%, transparent 70%)",
-        }}
-      />
-      <div
-        className="fixed inset-0 pointer-events-none opacity-[0.04]"
-        style={{
-          backgroundImage: `
-            linear-gradient(oklch(0.78 0.165 85 / 0.4) 1px, transparent 1px),
-            linear-gradient(90deg, oklch(0.78 0.165 85 / 0.4) 1px, transparent 1px)
-          `,
-          backgroundSize: "60px 60px",
+            "radial-gradient(ellipse 80% 50% at 50% 0%, oklch(0.15 0.06 255 / 0.6) 0%, transparent 70%)",
         }}
       />
 
       {/* Header */}
       <header
-        className="relative z-10 flex items-center justify-between px-5 py-3"
-        style={{
-          background: "oklch(0.1 0.025 255 / 0.97)",
-          borderBottom: "1px solid oklch(0.78 0.165 85 / 0.2)",
-          backdropFilter: "blur(12px)",
-        }}
+        className="relative z-10 flex items-center justify-between px-5 py-4"
+        style={{ borderBottom: "1px solid oklch(0.78 0.165 85 / 0.18)" }}
       >
-        <div className="flex items-center gap-3">
-          {leagueSettings.logoUrl ? (
+        {/* League name */}
+        <div className="flex items-center gap-2">
+          {league.logoUrl ? (
             <img
-              src={leagueSettings.logoUrl}
-              alt={leagueSettings.shortName}
-              style={{
-                width: "36px",
-                height: "36px",
-                objectFit: "contain",
-                flexShrink: 0,
-              }}
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
-              }}
+              src={league.logoUrl}
+              alt={league.shortName}
+              style={{ height: 28, objectFit: "contain" }}
             />
           ) : (
-            <Trophy size={20} style={{ color: "oklch(0.78 0.165 85)" }} />
+            <div
+              className="font-broadcast font-black"
+              style={{ fontSize: 16, color: "oklch(0.78 0.165 85)" }}
+            >
+              {league.shortName || "SPL"}
+            </div>
           )}
-          <div>
-            <div
-              className="font-broadcast tracking-widest leading-none"
-              style={{ color: "oklch(0.78 0.165 85)", fontSize: "1rem" }}
-            >
-              {leagueSettings.shortName}
-            </div>
-            <div
-              className="tracking-wider leading-none mt-0.5"
-              style={{
-                color: "oklch(0.42 0.02 90)",
-                fontSize: "0.65rem",
-              }}
-            >
-              {leagueSettings.fullName.toUpperCase()}
-            </div>
-          </div>
+          <span
+            className="font-broadcast tracking-widest"
+            style={{ fontSize: 10, color: "oklch(0.38 0.02 90)" }}
+          >
+            SQUAD
+          </span>
         </div>
 
-        <div
-          className="text-xs font-broadcast tracking-widest px-3 py-1"
-          style={{
-            background: "oklch(0.78 0.165 85 / 0.08)",
-            border: "1px solid oklch(0.78 0.165 85 / 0.25)",
-            color: "oklch(0.62 0.12 85)",
-          }}
-        >
-          SQUAD VIEW
+        {/* Live badge */}
+        <div className="flex items-center gap-1.5">
+          <motion.div
+            animate={{ opacity: [1, 0.3, 1] }}
+            transition={{ duration: 1.5, repeat: Number.POSITIVE_INFINITY }}
+            className="w-1.5 h-1.5 rounded-full"
+            style={{ background: "oklch(0.65 0.22 25)" }}
+          />
+          <span
+            className="font-broadcast text-xs tracking-widest"
+            style={{ color: "oklch(0.45 0.12 140)" }}
+          >
+            UPDATES EVERY 10s
+          </span>
         </div>
       </header>
 
-      <main className="relative z-10 px-4 sm:px-6 py-6 max-w-5xl mx-auto">
-        {team && (
-          <>
-            {/* Team hero section */}
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4 }}
-              className="flex items-center gap-5 mb-6 p-5"
-              style={{
-                background:
-                  "linear-gradient(135deg, oklch(0.15 0.04 255) 0%, oklch(0.11 0.025 255) 100%)",
-                border: "1px solid oklch(0.78 0.165 85 / 0.2)",
-                boxShadow: "0 0 40px oklch(0.78 0.165 85 / 0.06)",
-              }}
-            >
-              {/* Team logo */}
-              <div
-                className="flex-shrink-0 rounded-full overflow-hidden flex items-center justify-center"
-                style={{
-                  width: "80px",
-                  height: "80px",
-                  background: logoUrl ? "transparent" : "oklch(0.16 0.04 255)",
-                  border: "2px solid oklch(0.78 0.165 85 / 0.6)",
-                  boxShadow: "0 0 20px oklch(0.78 0.165 85 / 0.2)",
-                }}
-              >
-                {logoUrl ? (
-                  <img
-                    src={logoUrl}
-                    alt={team.name}
-                    className="w-full h-full object-cover rounded-full"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = "none";
-                    }}
-                  />
-                ) : (
-                  <span
-                    className="font-broadcast"
-                    style={{
-                      color: "oklch(0.78 0.165 85)",
-                      fontSize: "26px",
-                    }}
-                  >
-                    {initials}
-                  </span>
-                )}
-              </div>
-
-              {/* Team info */}
-              <div className="flex-1 min-w-0">
-                <h1
-                  className="font-broadcast tracking-wide leading-tight"
-                  style={{
-                    color: "oklch(0.97 0.01 90)",
-                    fontSize: "clamp(18px, 3vw, 28px)",
-                  }}
-                >
-                  {team.name}
-                </h1>
-                <div
-                  className="mt-1"
-                  style={{ color: "oklch(0.55 0.02 90)", fontSize: "13px" }}
-                >
-                  <span style={{ color: "oklch(0.78 0.165 85)" }}>
-                    {team.ownerName}
-                  </span>
-                  <span className="mx-2 opacity-30">·</span>
-                  Icon:{" "}
-                  <span style={{ color: "oklch(0.72 0.14 80)" }}>
-                    {team.teamIconPlayer}
-                  </span>
-                </div>
-                <div
-                  className="flex items-center gap-3 mt-2"
-                  style={{ fontSize: "12px" }}
-                >
-                  <span
-                    className="font-digital"
-                    style={{ color: "oklch(0.7 0.15 140)" }}
-                  >
-                    {Number(team.numberOfPlayers)}/7 players bought
-                  </span>
-                  {team.isTeamLocked && (
-                    <span
-                      className="px-2 py-0.5 font-broadcast tracking-widest"
-                      style={{
-                        background: "oklch(0.7 0.15 140 / 0.15)",
-                        border: "1px solid oklch(0.7 0.15 140 / 0.4)",
-                        color: "oklch(0.7 0.15 140)",
-                        fontSize: "9px",
-                      }}
-                    >
-                      SQUAD COMPLETE
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Purse remaining — prominent */}
-              <div
-                className="flex-shrink-0 text-right p-4"
-                style={{
-                  background: "oklch(0.09 0.025 255)",
-                  border: "1px solid oklch(0.78 0.165 85 / 0.2)",
-                }}
-              >
-                <div
-                  className="font-digital font-bold leading-none"
-                  style={{
-                    color: "oklch(0.82 0.17 87)",
-                    fontSize: "clamp(22px, 3.5vw, 36px)",
-                  }}
-                >
-                  {Number(team.purseAmountLeft).toLocaleString()}
-                </div>
-                <div
-                  className="font-broadcast tracking-widest mt-1"
-                  style={{
-                    color: "oklch(0.48 0.08 80)",
-                    fontSize: "10px",
-                  }}
-                >
-                  PURSE REMAINING
-                </div>
-                <div
-                  className="font-digital mt-0.5"
-                  style={{
-                    color: "oklch(0.35 0.02 90)",
-                    fontSize: "10px",
-                  }}
-                >
-                  of {Number(team.purseAmountTotal).toLocaleString()}
-                </div>
-              </div>
-            </motion.div>
-
-            {/* 9-slot grid */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.4, delay: 0.1 }}
-              className="p-4"
-              style={{
-                background: "oklch(0.12 0.025 255)",
-                border: "1px solid oklch(0.25 0.03 255)",
-              }}
-            >
-              <div
-                className="flex items-center gap-2 mb-4"
-                style={{
-                  borderBottom: "1px solid oklch(0.18 0.025 255)",
-                  paddingBottom: "12px",
-                }}
-              >
-                <div
-                  className="w-0.5 h-4"
-                  style={{ background: "oklch(0.78 0.165 85)" }}
-                />
-                <span
-                  className="font-broadcast text-xs tracking-widest"
-                  style={{ color: "oklch(0.78 0.165 85)" }}
-                >
-                  FULL SQUAD
-                </span>
-              </div>
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-9 gap-2">
-                {/* Slot 1: Owner */}
-                <OwnerSlot team={team} photoUrl={ownerPhotoUrl} />
-                {/* Slot 2: Icon */}
-                <IconSlot team={team} photoUrl={iconPhotoUrl} />
-                {/* Slots 3–9: 7 auction slots */}
-                {auctionSlots.map(({ slotKey, player }, idx) =>
-                  player ? (
-                    <FilledAuctionSlot
-                      key={slotKey}
-                      player={player}
-                      index={idx}
-                    />
-                  ) : (
-                    <EmptyAuctionSlot key={slotKey} index={idx} />
-                  ),
-                )}
-              </div>
-            </motion.div>
-
-            {/* Auto-refresh notice */}
-            <div
-              className="text-center mt-4 text-xs"
-              style={{ color: "oklch(0.32 0.02 90)" }}
-            >
-              Auto-refreshes every 10 seconds · Last updated{" "}
-              {new Date().toLocaleTimeString()}
-            </div>
-          </>
+      {/* Team hero */}
+      <section className="relative z-10 px-5 py-6 text-center">
+        {/* Logo */}
+        {teamLogoUrl ? (
+          <img
+            src={teamLogoUrl}
+            alt={team.name}
+            className="mx-auto rounded-full mb-4"
+            style={{
+              width: 100,
+              height: 100,
+              objectFit: "cover",
+              border: "3px solid oklch(0.78 0.165 85 / 0.5)",
+              boxShadow: "0 0 40px oklch(0.78 0.165 85 / 0.25)",
+            }}
+          />
+        ) : (
+          <div
+            className="mx-auto rounded-full flex items-center justify-center font-broadcast font-black mb-4"
+            style={{
+              width: 100,
+              height: 100,
+              background: "oklch(0.15 0.06 255)",
+              border: "3px solid oklch(0.78 0.165 85 / 0.4)",
+              color: "oklch(0.78 0.165 85)",
+              fontSize: 28,
+              boxShadow: "0 0 40px oklch(0.78 0.165 85 / 0.2)",
+            }}
+          >
+            {teamInitials(team.name).slice(0, 2)}
+          </div>
         )}
-      </main>
+
+        {/* Name */}
+        <h1
+          className="font-broadcast tracking-wider mb-1"
+          style={{ fontSize: 28, color: "oklch(0.78 0.165 85)" }}
+        >
+          {team.name.toUpperCase()}
+        </h1>
+
+        {/* Sub info */}
+        <p
+          className="font-broadcast tracking-widest mb-5"
+          style={{ fontSize: 11, color: "oklch(0.45 0.02 90)" }}
+        >
+          OWNER: {team.ownerName.toUpperCase()}
+        </p>
+
+        {/* Purse stats */}
+        <div className="flex items-center justify-center gap-8 mb-3 flex-wrap">
+          {[
+            {
+              label: "PURSE LEFT",
+              value: `${fmt(team.purseAmountLeft)} PTS`,
+              color: "oklch(0.78 0.165 85)",
+            },
+            {
+              label: "SPENT",
+              value: `${fmt(purseUsed)} PTS`,
+              color: "oklch(0.7 0.1 25)",
+            },
+            {
+              label: "PLAYERS",
+              value: `${Number(team.numberOfPlayers)} / 7`,
+              color: "oklch(0.65 0.12 140)",
+            },
+          ].map((stat) => (
+            <div key={stat.label} className="text-center">
+              <div
+                className="font-digital text-xl"
+                style={{ color: stat.color }}
+              >
+                {stat.value}
+              </div>
+              <div
+                className="font-broadcast tracking-widest"
+                style={{ fontSize: 9, color: "oklch(0.38 0.02 90)" }}
+              >
+                {stat.label}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Purse bar */}
+        <div
+          className="mx-auto rounded-full overflow-hidden mb-1"
+          style={{
+            width: "min(300px, 80%)",
+            height: 6,
+            background: "oklch(0.14 0.03 255)",
+          }}
+        >
+          <motion.div
+            initial={{ width: 0 }}
+            animate={{ width: `${pctLeft}%` }}
+            transition={{ duration: 1, ease: "easeOut" }}
+            className="h-full rounded-full"
+            style={{
+              background:
+                pctLeft > 50
+                  ? "linear-gradient(90deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))"
+                  : "linear-gradient(90deg, oklch(0.65 0.18 25), oklch(0.55 0.2 25))",
+            }}
+          />
+        </div>
+        <div
+          className="font-broadcast tracking-widest"
+          style={{ fontSize: 9, color: "oklch(0.35 0.02 90)" }}
+        >
+          {Math.round(pctLeft)}% PURSE REMAINING
+        </div>
+
+        {/* Locked badge */}
+        {team.isTeamLocked && (
+          <div
+            className="inline-block mt-3 px-4 py-1 font-broadcast tracking-widest"
+            style={{
+              background: "oklch(0.55 0.15 140 / 0.2)",
+              border: "1px solid oklch(0.55 0.15 140 / 0.5)",
+              color: "oklch(0.7 0.18 140)",
+              fontSize: 11,
+            }}
+          >
+            ✓ SQUAD COMPLETE
+          </div>
+        )}
+      </section>
+
+      {/* Squad grid */}
+      <section className="relative z-10 px-4 pb-8">
+        <div
+          className="font-broadcast tracking-widest mb-3"
+          style={{ fontSize: 11, color: "oklch(0.4 0.02 90)" }}
+        >
+          ALL 9 SLOTS
+        </div>
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
+          {/* Slot 1: Owner */}
+          <PlayerCard
+            slotLabel="OWNER"
+            name={team.ownerName}
+            photo={ownerPhotoUrl}
+            subLabel="FIXED"
+            price="200 PTS"
+            priceColor="oklch(0.78 0.165 85)"
+            accentColor="oklch(0.78 0.165 85)"
+            icon={<Crown size={8} style={{ color: "oklch(0.08 0.02 265)" }} />}
+          />
+          {/* Slot 2: Icon */}
+          <PlayerCard
+            slotLabel="ICON PLAYER"
+            name={team.teamIconPlayer}
+            photo={iconPhotoUrl}
+            subLabel="FIXED"
+            price="300 PTS"
+            priceColor="oklch(0.7 0.12 60)"
+            accentColor="oklch(0.7 0.12 60)"
+            icon={<Star size={8} style={{ color: "oklch(0.08 0.02 265)" }} />}
+          />
+          {/* Slots 3-9: Auction */}
+          {Array.from({ length: 7 }).map((_, i) => {
+            const player = boughtPlayers[i];
+            const slotNum = i + 3;
+            if (player) {
+              const catColor = getCategoryColor(player.category);
+              return (
+                <PlayerCard
+                  key={String(player.id)}
+                  slotLabel={`SLOT ${slotNum}`}
+                  name={player.name}
+                  photo={player.imageUrl}
+                  subLabel={player.category.toUpperCase()}
+                  price={`${fmt(player.soldPrice ?? 0n)} PTS`}
+                  priceColor={catColor}
+                  accentColor={catColor}
+                />
+              );
+            }
+            return (
+              <PlayerCard
+                key={`slot-${slotNum}`}
+                slotLabel={`SLOT ${slotNum}`}
+                name=""
+                photo=""
+                subLabel=""
+                price=""
+                priceColor=""
+                accentColor="oklch(0.22 0.04 255)"
+                isEmpty
+              />
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Last updated */}
+      <div className="relative z-10 text-center pb-4">
+        <p
+          className="font-broadcast tracking-widest"
+          style={{ fontSize: 9, color: "oklch(0.28 0.02 90)" }}
+        >
+          LAST UPDATED: {lastUpdated.toLocaleTimeString()}
+        </p>
+      </div>
 
       {/* Footer */}
       <footer
-        className="relative z-10 text-center text-xs py-6 mt-4"
+        className="relative z-10 text-center py-4 text-xs"
         style={{ color: "oklch(0.28 0.02 90)" }}
       >
         © {new Date().getFullYear()}. Built with love using{" "}

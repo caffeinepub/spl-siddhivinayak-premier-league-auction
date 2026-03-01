@@ -15,16 +15,21 @@ export class ExternalBlob {
     withUploadProgress(onProgress: (percentage: number) => void): ExternalBlob;
 }
 export interface Player {
-    id: bigint;
-    status: string;
-    soldTo?: bigint;
+    id: PlayerId;
+    status: Status;
+    soldTo?: TeamId;
     name: string;
-    soldPrice?: bigint;
+    soldPrice?: Amount;
     imageUrl: string;
-    category: string;
-    rating: bigint;
-    basePrice: bigint;
+    category: Category;
+    rating: Rating;
+    basePrice: Amount;
 }
+export type TeamLogo = ExternalBlob | null;
+export type Rating = bigint;
+export type Amount = bigint;
+export type TeamId = bigint;
+export type PlayerId = bigint;
 export type Result = {
     __kind__: "ok";
     ok: null;
@@ -38,46 +43,58 @@ export interface PlayerWithTeam {
 }
 export interface Dashboard {
     remainingPlayers: bigint;
-    totalSpent: bigint;
+    totalSpent: Amount;
     mostExpensivePlayer?: Player;
     soldPlayers: bigint;
 }
 export interface AuctionState {
-    currentPlayerId?: bigint;
-    leadingTeamId?: bigint;
+    currentPlayerId?: PlayerId;
+    leadingTeamId?: TeamId;
     isActive: boolean;
-    currentBid: bigint;
+    currentBid: Amount;
 }
 export interface Team {
-    id: bigint;
-    purseAmountLeft: bigint;
+    id: TeamId;
+    purseAmountLeft: Amount;
     teamIconPlayer: string;
-    teamLogo?: ExternalBlob;
+    teamLogo: TeamLogo;
     isTeamLocked: boolean;
     ownerName: string;
     name: string;
-    purseAmountTotal: bigint;
+    purseAmountTotal: Amount;
     numberOfPlayers: bigint;
 }
+export enum Category {
+    bowler = "bowler",
+    allrounder = "allrounder",
+    batsman = "batsman"
+}
+export enum Status {
+    upcoming = "upcoming",
+    live = "live",
+    sold = "sold"
+}
 export interface backendInterface {
-    addPlayer(name: string, category: string, basePrice: bigint, imageUrl: string, rating: bigint): Promise<Result>;
+    addPlayer(name: string, category: Category, basePrice: Amount, imageUrl: string, rating: Rating): Promise<Result>;
     adminLogin(password: string): Promise<boolean>;
-    deletePlayer(playerId: bigint): Promise<Result>;
-    editTeamPurse(teamId: bigint, newPurse: bigint): Promise<Result>;
+    deletePlayer(playerId: PlayerId): Promise<Result>;
+    editTeamPurse(teamId: TeamId, newPurse: Amount): Promise<Result>;
     getAuctionState(): Promise<AuctionState>;
     getDashboard(): Promise<Dashboard>;
-    getPlayerById(playerId: bigint): Promise<Player | null>;
+    getPlayerById(playerId: PlayerId): Promise<Player | null>;
     getPlayers(): Promise<Array<Player>>;
-    getPlayersByCategory(category: string): Promise<Array<Player>>;
-    getRemainingPurse(teamId: bigint): Promise<bigint | null>;
+    getPlayersByCategory(category: Category): Promise<Array<Player>>;
+    getRemainingPurse(teamId: TeamId): Promise<Amount | null>;
     getResults(): Promise<Array<PlayerWithTeam>>;
-    getTeamById(teamId: bigint): Promise<Team | null>;
+    getTeamById(teamId: TeamId): Promise<Team | null>;
     getTeams(): Promise<Array<Team>>;
-    placeBid(teamId: bigint): Promise<Result>;
+    initialize(): Promise<boolean>;
+    placeBid(teamId: TeamId): Promise<Result>;
     resetAuction(): Promise<void>;
-    selectPlayer(playerId: bigint): Promise<Result>;
+    selectPlayer(playerId: PlayerId): Promise<Result>;
     sellPlayer(): Promise<Result>;
-    updatePlayer(playerId: bigint, name: string, category: string, basePrice: bigint, imageUrl: string, rating: bigint): Promise<Result>;
-    updateTeam(teamId: bigint, name: string, ownerName: string, iconPlayerName: string): Promise<Result>;
-    uploadTeamLogo(teamId: bigint, blob: ExternalBlob): Promise<Result>;
+    unsellPlayer(playerId: PlayerId): Promise<Result>;
+    updatePlayer(playerId: PlayerId, name: string, category: Category, basePrice: Amount, imageUrl: string, rating: Rating): Promise<Result>;
+    updateTeam(teamId: TeamId, name: string, ownerName: string, iconPlayerName: string): Promise<Result>;
+    uploadTeamLogo(teamId: TeamId, blob: ExternalBlob): Promise<Result>;
 }

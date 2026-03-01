@@ -30,16 +30,27 @@ import { getTeamLogos } from "./LandingPage";
 
 // ─── Admin password ────────────────────────────────────────────────────────────
 const ADMIN_PASSWORD = "SPL@2026";
+const AUTH_KEY = "spl_admin_auth";
 
-// ─── Category colors ───────────────────────────────────────────────────────────
-const CATEGORY_COLORS: Record<string, string> = {
-  Batsman: "oklch(0.7 0.15 140)",
-  Bowler: "oklch(0.65 0.18 25)",
-  Allrounder: "oklch(0.78 0.165 85)",
-};
+// ─── Category display helpers ─────────────────────────────────────────────────
+function getCategoryColor(category: string): string {
+  const cat = category.toLowerCase();
+  if (cat === "batsman") return "oklch(0.7 0.15 140)";
+  if (cat === "bowler") return "oklch(0.65 0.18 25)";
+  if (cat === "allrounder") return "oklch(0.78 0.165 85)";
+  return "oklch(0.55 0.02 90)";
+}
+
+function displayCategory(category: string): string {
+  const cat = category.toLowerCase();
+  if (cat === "batsman") return "BATSMAN";
+  if (cat === "bowler") return "BOWLER";
+  if (cat === "allrounder") return "ALLROUNDER";
+  return category.toUpperCase();
+}
 
 function CategoryBadge({ category }: { category: string }) {
-  const color = CATEGORY_COLORS[category] ?? "oklch(0.55 0.02 90)";
+  const color = getCategoryColor(category);
   return (
     <span
       className="text-xs font-broadcast tracking-widest px-2 py-0.5 flex-shrink-0"
@@ -49,7 +60,7 @@ function CategoryBadge({ category }: { category: string }) {
         color,
       }}
     >
-      {category.toUpperCase()}
+      {displayCategory(category)}
     </span>
   );
 }
@@ -63,9 +74,9 @@ function PasswordGate({ onAuth }: { onAuth: () => void }) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (password === ADMIN_PASSWORD) {
-      localStorage.setItem("spl_admin_auth", "1");
+      localStorage.setItem(AUTH_KEY, "1");
       onAuth();
-      // Fire-and-forget backend verification
+      // Background verification
       if (actor) {
         actor.adminLogin(password).catch(() => {
           // ignore — local check already passed
@@ -188,7 +199,7 @@ function PasswordGate({ onAuth }: { onAuth: () => void }) {
   );
 }
 
-// ─── Edit Purse Dialog ─────────────────────────────────────────────────────────
+// ─── Edit Purse Modal ──────────────────────────────────────────────────────────
 function EditPurseModal({
   team,
   onClose,
@@ -502,7 +513,6 @@ function TeamCard({
       )}
 
       <div className="flex items-center gap-2 mb-2">
-        {/* Team logo / initials */}
         <div
           className="w-8 h-8 rounded-full flex-shrink-0 overflow-hidden flex items-center justify-center"
           style={{
@@ -521,7 +531,7 @@ function TeamCard({
             />
           ) : (
             <span
-              className="font-broadcast text-xs"
+              className="font-broadcast"
               style={{ color: "oklch(0.78 0.165 85)", fontSize: "10px" }}
             >
               {initials}
@@ -531,7 +541,7 @@ function TeamCard({
 
         <div className="flex-1 min-w-0">
           <div
-            className="font-broadcast text-xs tracking-wide truncate"
+            className="font-broadcast truncate"
             style={{
               color: team.isTeamLocked
                 ? "oklch(0.38 0.02 90)"
@@ -671,15 +681,10 @@ function RemainingPlayersPanel({
 
   const byCategory: Record<string, Player[]> = {};
   for (const p of upcomingPlayers) {
-    if (!byCategory[p.category]) byCategory[p.category] = [];
-    byCategory[p.category].push(p);
+    const key = p.category;
+    if (!byCategory[key]) byCategory[key] = [];
+    byCategory[key].push(p);
   }
-
-  const CATEGORY_COLORS_LOCAL: Record<string, string> = {
-    Batsman: "oklch(0.7 0.15 140)",
-    Bowler: "oklch(0.65 0.18 25)",
-    Allrounder: "oklch(0.78 0.165 85)",
-  };
 
   return (
     <div
@@ -688,7 +693,6 @@ function RemainingPlayersPanel({
         border: "1px solid oklch(0.25 0.03 255)",
       }}
     >
-      {/* Header toggle */}
       <button
         type="button"
         onClick={() => setIsExpanded((v) => !v)}
@@ -732,8 +736,7 @@ function RemainingPlayersPanel({
           >
             <div className="p-2.5 space-y-3 max-h-72 overflow-y-auto">
               {Object.entries(byCategory).map(([category, catPlayers]) => {
-                const color =
-                  CATEGORY_COLORS_LOCAL[category] ?? "oklch(0.55 0.02 90)";
+                const color = getCategoryColor(category);
                 return (
                   <div key={category}>
                     <div
@@ -743,7 +746,7 @@ function RemainingPlayersPanel({
                         borderBottom: `1px solid ${color}28`,
                       }}
                     >
-                      {category.toUpperCase()} ({catPlayers.length})
+                      {displayCategory(category)} ({catPlayers.length})
                     </div>
                     <div className="space-y-1">
                       {catPlayers.map((player) => (
@@ -755,7 +758,6 @@ function RemainingPlayersPanel({
                             border: `1px solid ${color}1a`,
                           }}
                         >
-                          {/* Tiny photo */}
                           <div
                             className="w-7 h-9 overflow-hidden flex-shrink-0 flex items-center justify-center"
                             style={{
@@ -904,7 +906,7 @@ function AdminPanel() {
   const [isSelling, setIsSelling] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
 
-  // ── Optimistic bid state ──────────────────────────────────────────────────────
+  // ── Optimistic bid state ─────────────────────────────────────────────────────
   const [localBid, setLocalBid] = useState<number | null>(null);
   const [localLeadingTeamId, setLocalLeadingTeamId] = useState<bigint | null>(
     null,
@@ -915,7 +917,6 @@ function AdminPanel() {
   const [localCurrentPlayerId, setLocalCurrentPlayerId] = useState<
     bigint | null
   >(null);
-  // Undo stack: stores previous bid state
   const [undoStack, setUndoStack] = useState<
     Array<{ bid: number; teamId: bigint | null }>
   >([]);
@@ -924,11 +925,11 @@ function AdminPanel() {
   const prevBidRef = useRef(0);
   const [bidBumping, setBidBumping] = useState(false);
 
-  // Effective values (optimistic if set, else server)
+  // Effective values
   const serverBid = Number(auctionState?.currentBid ?? 0);
   const currentBid = localBid !== null ? localBid : serverBid;
   const effectiveLeadingTeamId =
-    localLeadingTeamId !== undefined && localLeadingTeamId !== null
+    localLeadingTeamId !== null
       ? localLeadingTeamId
       : (auctionState?.leadingTeamId ?? null);
   const effectiveIsActive =
@@ -953,7 +954,7 @@ function AdminPanel() {
         null)
       : null;
 
-  // Last sold player (for UNSELL feature)
+  // Last sold player (for UNSELL)
   const lastSoldPlayer =
     [...players]
       .filter((p) => p.status === "sold")
@@ -994,7 +995,7 @@ function AdminPanel() {
     }
   }, [effectiveIsActive]);
 
-  // ── Actions ───────────────────────────────────────────────────────────────────
+  // ── Actions ──────────────────────────────────────────────────────────────────
 
   const handleSelectPlayer = async (playerId: bigint) => {
     if (!actor) return;
@@ -1002,7 +1003,6 @@ function AdminPanel() {
       toast.warning("An auction is already active. Sell or reset first.");
       return;
     }
-    // Optimistic
     setLocalCurrentPlayerId(playerId);
     setLocalAuctionActive(true);
     setLocalBid(null);
@@ -1041,7 +1041,6 @@ function AdminPanel() {
       const newBid = prevBid + 100;
 
       isBiddingRef.current = true;
-      // Optimistic update — instant
       setLocalBid(newBid);
       setLocalLeadingTeamId(teamId);
       setUndoStack((prev) => [...prev, { bid: prevBid, teamId: prevTeamId }]);
@@ -1050,7 +1049,6 @@ function AdminPanel() {
         .placeBid(teamId)
         .then((result) => {
           if (result.__kind__ === "err") {
-            // Revert on explicit rejection
             setLocalBid(null);
             setLocalLeadingTeamId(null);
             setUndoStack((prev) => prev.slice(0, -1));
@@ -1062,7 +1060,6 @@ function AdminPanel() {
           }
         })
         .catch(() => {
-          // Network error: keep optimistic state, schedule resync
           setTimeout(() => refetch(), 2000);
         })
         .finally(() => {
@@ -1079,7 +1076,6 @@ function AdminPanel() {
     isUndoModeRef.current = true;
     setLocalBid(last.bid);
     setLocalLeadingTeamId(last.teamId);
-    // Pause polling for 5s so the reverted state shows
     pausePolling(5000);
     setTimeout(() => {
       isUndoModeRef.current = false;
@@ -1094,7 +1090,6 @@ function AdminPanel() {
   const handleSell = async () => {
     if (!actor) return;
     setIsSelling(true);
-    // Optimistic
     setLocalAuctionActive(false);
     setLocalBid(null);
     setLocalLeadingTeamId(null);
@@ -1151,45 +1146,17 @@ function AdminPanel() {
   };
 
   const handleUnsellConfirm = async () => {
-    if (!actor || !lastSoldPlayer || !lastSoldTeam) return;
+    if (!actor || !lastSoldPlayer) return;
     try {
-      // 1. Restore purse
-      const restoredPurse =
-        Number(lastSoldTeam.purseAmountLeft) +
-        Number(lastSoldPlayer.soldPrice ?? 0);
-      const purseResult = await actor.editTeamPurse(
-        lastSoldTeam.id,
-        BigInt(restoredPurse),
-      );
-      if (purseResult.__kind__ === "err") {
-        toast.error(`Failed to restore purse: ${purseResult.err}`);
+      // Use the atomic unsellPlayer backend call
+      const result = await actor.unsellPlayer(lastSoldPlayer.id);
+      if (result.__kind__ === "err") {
+        toast.error(`Unsell failed: ${result.err}`);
         return;
       }
-
-      // 2. Delete the sold player
-      const deleteResult = await actor.deletePlayer(lastSoldPlayer.id);
-      if (deleteResult.__kind__ === "err") {
-        toast.error(`Failed to remove player: ${deleteResult.err}`);
-        return;
-      }
-
-      // 3. Re-add player as upcoming
-      const addResult = await actor.addPlayer(
-        lastSoldPlayer.name,
-        lastSoldPlayer.category,
-        lastSoldPlayer.basePrice,
-        lastSoldPlayer.imageUrl,
-        lastSoldPlayer.rating,
-      );
-      if (addResult.__kind__ === "err") {
-        toast.error(`Failed to restore player: ${addResult.err}`);
-        return;
-      }
-
-      toast.success(
-        `${lastSoldPlayer.name} returned to auction pool. Purse restored for ${lastSoldTeam.name}.`,
-        { duration: 6000 },
-      );
+      toast.success(`${lastSoldPlayer.name} returned to auction pool.`, {
+        duration: 5000,
+      });
       await refetch();
     } catch {
       toast.error("Unsell failed — check connection and try again");
@@ -1227,14 +1194,13 @@ function AdminPanel() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("spl_admin_auth");
+    localStorage.removeItem(AUTH_KEY);
     window.location.reload();
   };
 
   const upcomingPlayers = players.filter((p) => p.status === "upcoming");
   const soldPlayers = players.filter((p) => p.status === "sold");
 
-  // Team logo for leading team
   const teamLogos = getTeamLogos();
   const leadingTeamLogoUrl = leadingTeam
     ? (teamLogos[String(leadingTeam.id)] ?? "")
@@ -1449,7 +1415,7 @@ function AdminPanel() {
       </AnimatePresence>
 
       <div className="p-3 grid grid-cols-1 lg:grid-cols-3 gap-3">
-        {/* ─── LEFT COLUMN ──────────────────────────────────────────── */}
+        {/* ─── LEFT COLUMN ──────────────────────────────────────────────── */}
         <div className="space-y-3">
           {/* Dashboard Stats */}
           <div className="grid grid-cols-2 gap-2">
@@ -1657,7 +1623,7 @@ function AdminPanel() {
             </div>
           </div>
 
-          {/* Remaining / Re-queue Players Panel */}
+          {/* Remaining / Re-queue Panel */}
           <RemainingPlayersPanel
             players={players}
             auctionActive={effectiveIsActive}
@@ -1665,9 +1631,8 @@ function AdminPanel() {
           />
         </div>
 
-        {/* ─── CENTER COLUMN ────────────────────────────────────────── */}
+        {/* ─── CENTER COLUMN ────────────────────────────────────────────── */}
         <div className="space-y-3">
-          {/* Auction Control */}
           <div
             style={{
               background: "oklch(0.09 0.025 255)",
@@ -1682,7 +1647,7 @@ function AdminPanel() {
               {currentPlayer ? (
                 <>
                   <div
-                    className="w-14 h-18 flex-shrink-0 overflow-hidden"
+                    className="flex-shrink-0 overflow-hidden"
                     style={{
                       width: "56px",
                       height: "72px",
@@ -1785,7 +1750,6 @@ function AdminPanel() {
                 }}
               />
 
-              {/* Bid number + leading team logo */}
               <div className="flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-end gap-2 mb-1">
@@ -2016,9 +1980,8 @@ function AdminPanel() {
           </div>
         </div>
 
-        {/* ─── RIGHT COLUMN ─────────────────────────────────────────── */}
+        {/* ─── RIGHT COLUMN ─────────────────────────────────────────────── */}
         <div>
-          {/* Teams Grid */}
           <div
             style={{
               background: "oklch(0.12 0.025 255)",
@@ -2113,9 +2076,7 @@ function AdminPanel() {
 // ─── Main Export ───────────────────────────────────────────────────────────────
 export default function AdminPage() {
   const [isAuthed, setIsAuthed] = useState(
-    () =>
-      localStorage.getItem("spl_admin_auth") === "1" ||
-      localStorage.getItem("spl_admin_auth") === "true",
+    () => localStorage.getItem(AUTH_KEY) === "1",
   );
 
   if (!isAuthed) {

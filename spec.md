@@ -1,43 +1,57 @@
 # SPL – Siddhivinayak Premier League Auction
 
 ## Current State
-- Squads page shows 10 team cards with 9 slots each (1 Owner, 1 Icon, 7 Auction)
-- Owner and Icon slots show only a Crown/Star icon placeholder with no photo
-- Team header shows "PTS REMAINING" purse balance
-- No unsold players panel
-- No hammer animation on sold/unsold events
-- Settings > Teams tab has team logo upload but no owner photo or icon photo upload fields
-- Backend Team type has ownerName and teamIconPlayer text fields but no photo URL fields
+
+A full-stack cricket auction web application with:
+- Motoko backend: team/player/auction state management with blob-storage component
+- React frontend: 6 pages (Landing, Admin, Live, Settings, Squads, Team)
+- Features accumulated through 20+ iterations, now with accumulated bugs and instability
+
+Known issues from conversation history:
+- Admin page connection errors and login failures
+- Settings page redirecting incorrectly (sessionStorage vs localStorage mismatch)
+- Photo uploads not working reliably
+- Bid updates slow / UI lag
+- Undo bid and unsell player not working reliably
+- Polling causing instability on mobile hotspot
+- Overall instability from layered incremental patches
 
 ## Requested Changes (Diff)
 
 ### Add
-- Backend: `ownerPhotoUrl` and `iconPhotoUrl` Text fields to Team type
-- Backend: `updateTeamPhotos(teamId, ownerPhotoUrl, iconPhotoUrl)` function
-- Settings > Teams: owner photo upload + icon photo upload fields (each with file picker and URL field), stored in localStorage (same approach as team logos)
-- Squads page: Owner slot shows uploaded owner photo (circle crop)
-- Squads page: Icon slot shows uploaded icon photo (circle crop)  
-- Squads page: Unsold players panel — a separate collapsible list at the bottom of the page showing all players with status "upcoming" (not yet auctioned), allowing admin to see who still needs to be sold
-- Squads page: Hammer animation overlay — when a player is sold (status changes from live→sold), show a brief hammer-strike animation with the team logo. When a player goes unsold (status reset to upcoming), show the same hammer animation WITHOUT a team logo
-- Squads page: Store last known "just sold" player+team info to trigger the animation on status change detection
+- Nothing structurally new — full clean rebuild of all existing features
 
 ### Modify
-- Squads page: Remove "PTS REMAINING" section from team header entirely
-- Squads page: Owner slot — replace Crown icon placeholder with actual owner photo (uploaded via settings), fallback to Crown icon if no photo
-- Squads page: Icon slot — replace Star icon placeholder with actual icon photo (uploaded via settings), fallback to Star icon if no photo
+- **Backend**: Clean rewrite of main.mo, keeping all existing types and functions but ensuring correctness
+  - Team, Player, AuctionState, Dashboard types
+  - All CRUD: addPlayer, updatePlayer, deletePlayer, updateTeam, uploadTeamLogo
+  - Auction: selectPlayer, placeBid, sellPlayer, resetAuction, editTeamPurse
+  - Unsell: implemented by restoring purse + decrementing numberOfPlayers + resetting player status
+  - Add `unsellPlayer(playerId: Nat)` backend function to atomically handle unsell
+- **Frontend — all pages rewritten from scratch**:
+  - Stable, simple data polling (3s interval, parallel calls, 8-error tolerance)
+  - Admin login: instant local check, no network dependency
+  - Optimistic UI for bids (+100 updates instantly)
+  - Undo bid: local undo stack, pauses polling 5s
+  - Unsell player: calls new `unsellPlayer` backend function atomically
+  - Settings page: correct localStorage auth guard, all tabs working
+  - Live page: SOLD ribbon on photo, team display in right panel after SOLD
+  - Squads page: vertical compact rows, hammer animation on sold/unsold
+  - Team page: individual shareable team view
+  - All photos stored as base64 data URLs in localStorage (no external upload)
 
 ### Remove
-- Squads page: Purse remaining display from team header card
+- No feature removals — just legacy cruft and accumulated bug layers
 
 ## Implementation Plan
-1. Add `ownerPhotoUrl` and `iconPhotoUrl` to backend Team type and seed data (empty strings)
-2. Add `updateTeamPhotos` backend function
-3. Store owner/icon photos in localStorage keyed by team ID (avoid base64 in backend to keep it light) — use keys `spl_owner_photos` and `spl_icon_photos`
-4. Add helper functions in LandingPage.tsx for owner/icon photo storage
-5. Settings > TeamRow: add owner photo upload row and icon photo upload row (same UX as team logo upload)
-6. Squads > OwnerSlot: accept `photoUrl` prop, render photo if present
-7. Squads > IconSlot: accept `photoUrl` prop, render photo if present
-8. Squads > TeamSquadCard: remove purse remaining section from header
-9. Squads > HammerAnimation: full-screen overlay with animated hammer SVG + optional team logo, triggered for 2.5s
-10. Squads > Unsold Players Panel: collapsible section below squad showing all upcoming players with photo, name, category, base price
-11. Wire animation trigger: compare previous player statuses to current on each poll cycle
+
+1. **Backend (main.mo)**: Clean rewrite with added `unsellPlayer` atomic function
+2. **useAuctionData hook**: Simple, stable, parallel polling with 8-error tolerance
+3. **useImageUpload hook**: Simple base64 file reader (no external dependencies)
+4. **LandingPage**: League settings helpers + landing UI
+5. **AdminPage**: Login gate, bid controls, undo bid, unsell player, remaining players panel
+6. **LivePage**: Player display, SOLD ribbon animation, team sold display, purse chart
+7. **SettingsPage**: League tab, Teams tab (with owner/icon photos), Players tab, Live Layout tab
+8. **SquadsPage**: Vertical compact rows, hammer animation, team share links
+9. **TeamPage**: Individual team squad view with all 9 slots
+10. **App.tsx**: Router with all 6 routes
