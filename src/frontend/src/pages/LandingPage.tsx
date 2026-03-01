@@ -52,6 +52,40 @@ export function saveTeamLogos(logos: Record<string, string>) {
   localStorage.setItem(TEAM_LOGOS_KEY, JSON.stringify(logos));
 }
 
+// ─── Owner photos helpers (shared with SettingsPage/SquadsPage) ───────────────
+export const OWNER_PHOTOS_KEY = "spl_owner_photos";
+
+export function getOwnerPhotos(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(OWNER_PHOTOS_KEY);
+    if (raw) return JSON.parse(raw) as Record<string, string>;
+  } catch {
+    // ignore
+  }
+  return {};
+}
+
+export function saveOwnerPhotos(photos: Record<string, string>) {
+  localStorage.setItem(OWNER_PHOTOS_KEY, JSON.stringify(photos));
+}
+
+// ─── Icon player photos helpers (shared with SettingsPage/SquadsPage) ─────────
+export const ICON_PHOTOS_KEY = "spl_icon_photos";
+
+export function getIconPhotos(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(ICON_PHOTOS_KEY);
+    if (raw) return JSON.parse(raw) as Record<string, string>;
+  } catch {
+    // ignore
+  }
+  return {};
+}
+
+export function saveIconPhotos(photos: Record<string, string>) {
+  localStorage.setItem(ICON_PHOTOS_KEY, JSON.stringify(photos));
+}
+
 // ─── Live Layout helpers (shared with SettingsPage/LivePage) ──────────────────
 export interface LiveLayoutConfig {
   playerImageWidth: number;

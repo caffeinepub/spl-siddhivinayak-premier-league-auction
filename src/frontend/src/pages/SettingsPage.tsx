@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ChevronDown,
   ChevronUp,
+  Crown,
   Edit3,
   ImageIcon,
   Loader2,
@@ -27,20 +28,32 @@ import { useActor } from "../hooks/useActor";
 import { useImageUpload } from "../hooks/useImageUpload";
 import {
   DEFAULT_LIVE_LAYOUT,
+  ICON_PHOTOS_KEY,
   LEAGUE_KEY,
   LIVE_LAYOUT_KEY,
   type LeagueSettings,
   type LiveLayoutConfig,
+  OWNER_PHOTOS_KEY,
   TEAM_LOGOS_KEY,
+  getIconPhotos,
   getLeagueSettings,
   getLiveLayout,
+  getOwnerPhotos,
   getTeamLogos,
+  saveIconPhotos,
   saveLeagueSettings,
+  saveOwnerPhotos,
   saveTeamLogos,
 } from "./LandingPage";
 
 // ─── Re-export for backward compat ────────────────────────────────────────────
-export { getLeagueSettings as getLeagueConfig, getLiveLayout, getTeamLogos };
+export {
+  getLeagueSettings as getLeagueConfig,
+  getLiveLayout,
+  getTeamLogos,
+  getOwnerPhotos,
+  getIconPhotos,
+};
 export type { LeagueSettings as LeagueConfig, LiveLayoutConfig };
 export { LIVE_LAYOUT_KEY, DEFAULT_LIVE_LAYOUT };
 
@@ -1044,6 +1057,8 @@ interface TeamEditState {
   iconPlayerName: string;
   purse: string;
   logoUrl: string;
+  ownerPhotoUrl: string;
+  iconPhotoUrl: string;
   isDirty: boolean;
   isSaving: boolean;
 }
@@ -1065,6 +1080,8 @@ function TeamRow({
 }) {
   const originalPurse = Number(team.purseAmountLeft);
   const teamLogos = getTeamLogos();
+  const ownerPhotos = getOwnerPhotos();
+  const iconPhotos = getIconPhotos();
 
   const [state, setState] = useState<TeamEditState>({
     name: team.name,
@@ -1072,14 +1089,28 @@ function TeamRow({
     iconPlayerName: team.teamIconPlayer,
     purse: String(originalPurse),
     logoUrl: teamLogos[String(team.id)] ?? "",
+    ownerPhotoUrl: ownerPhotos[String(team.id)] ?? "",
+    iconPhotoUrl: iconPhotos[String(team.id)] ?? "",
     isDirty: false,
     isSaving: false,
   });
   const logoFileInputRef = useRef<HTMLInputElement>(null);
+  const ownerPhotoFileInputRef = useRef<HTMLInputElement>(null);
+  const iconPhotoFileInputRef = useRef<HTMLInputElement>(null);
   const {
     uploadImage,
     isUploading: isLogoUploading,
     progress: logoProgress,
+  } = useImageUpload();
+  const {
+    uploadImage: uploadOwnerPhoto,
+    isUploading: isOwnerPhotoUploading,
+    progress: ownerPhotoProgress,
+  } = useImageUpload();
+  const {
+    uploadImage: uploadIconPhoto,
+    isUploading: isIconPhotoUploading,
+    progress: iconPhotoProgress,
   } = useImageUpload();
 
   const update = (
@@ -1104,6 +1135,36 @@ function TeamRow({
     }
   };
 
+  const handleOwnerPhotoFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    try {
+      const url = await uploadOwnerPhoto(file);
+      setState((prev) => ({ ...prev, ownerPhotoUrl: url, isDirty: true }));
+      toast.success("Owner photo uploaded");
+    } catch {
+      toast.error("Owner photo upload failed");
+    }
+  };
+
+  const handleIconPhotoFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    try {
+      const url = await uploadIconPhoto(file);
+      setState((prev) => ({ ...prev, iconPhotoUrl: url, isDirty: true }));
+      toast.success("Icon player photo uploaded");
+    } catch {
+      toast.error("Icon photo upload failed");
+    }
+  };
+
   const handleSave = async () => {
     setState((prev) => ({ ...prev, isSaving: true }));
     const newPurse = Number.parseInt(state.purse, 10);
@@ -1114,6 +1175,18 @@ function TeamRow({
       const logos = getTeamLogos();
       logos[String(team.id)] = state.logoUrl;
       saveTeamLogos(logos);
+    }
+    // Save owner photo to localStorage
+    if (state.ownerPhotoUrl !== (ownerPhotos[String(team.id)] ?? "")) {
+      const photos = getOwnerPhotos();
+      photos[String(team.id)] = state.ownerPhotoUrl;
+      saveOwnerPhotos(photos);
+    }
+    // Save icon photo to localStorage
+    if (state.iconPhotoUrl !== (iconPhotos[String(team.id)] ?? "")) {
+      const photos = getIconPhotos();
+      photos[String(team.id)] = state.iconPhotoUrl;
+      saveIconPhotos(photos);
     }
 
     await onSave(team.id, {
@@ -1250,98 +1323,257 @@ function TeamRow({
         </div>
       </div>
 
-      {/* Logo upload */}
-      <div className="px-4 pb-4">
-        <p
-          className="text-xs font-broadcast tracking-widest mb-2"
-          style={{ color: "oklch(0.42 0.02 90)" }}
-        >
-          TEAM LOGO (circle crop)
-        </p>
-        <div className="flex items-center gap-3">
-          <div
-            className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden"
-            style={{
-              background: "oklch(0.16 0.04 255)",
-              border: "1px solid oklch(0.25 0.03 255)",
-            }}
+      {/* Logo + Photos upload row */}
+      <div className="px-4 pb-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Team Logo */}
+        <div>
+          <p
+            className="text-xs font-broadcast tracking-widest mb-2"
+            style={{ color: "oklch(0.42 0.02 90)" }}
           >
-            {state.logoUrl ? (
-              <img
-                src={state.logoUrl}
-                alt="Logo"
-                className="w-full h-full object-cover rounded-full"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = "none";
-                }}
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <ImageIcon size={14} style={{ color: "oklch(0.32 0.02 90)" }} />
-              </div>
-            )}
-          </div>
-          <input
-            ref={logoFileInputRef}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleLogoFileChange}
-          />
-          <button
-            type="button"
-            onClick={() => logoFileInputRef.current?.click()}
-            disabled={isLogoUploading}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-broadcast tracking-wider transition-all disabled:opacity-60"
-            style={{
-              background: "oklch(0.12 0.03 255)",
-              border: "1px solid oklch(0.78 0.165 85 / 0.35)",
-              color: "oklch(0.78 0.165 85)",
-            }}
-          >
-            {isLogoUploading ? (
-              <>
-                <Loader2 size={11} className="animate-spin" />
-                {logoProgress}%
-              </>
-            ) : (
-              <>
-                <Upload size={11} />
-                UPLOAD LOGO
-              </>
-            )}
-          </button>
-          {state.logoUrl && (
-            <button
-              type="button"
-              onClick={() =>
-                setState((prev) => ({ ...prev, logoUrl: "", isDirty: true }))
-              }
-              className="text-xs px-2 py-2 hover:opacity-80"
+            TEAM LOGO (circle)
+          </p>
+          <div className="flex items-center gap-3">
+            <div
+              className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden"
               style={{
-                background: "oklch(0.12 0.03 255)",
-                border: "1px solid oklch(0.62 0.22 25 / 0.35)",
-                color: "oklch(0.62 0.22 25)",
+                background: "oklch(0.16 0.04 255)",
+                border: "1px solid oklch(0.25 0.03 255)",
               }}
             >
-              <Trash2 size={11} />
-            </button>
-          )}
-          {isLogoUploading && (
-            <div
-              className="flex-1 h-0.5 overflow-hidden"
-              style={{ background: "oklch(0.25 0.03 255)" }}
-            >
-              <div
-                className="h-full transition-all"
-                style={{
-                  width: `${logoProgress}%`,
-                  background:
-                    "linear-gradient(90deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))",
-                }}
-              />
+              {state.logoUrl ? (
+                <img
+                  src={state.logoUrl}
+                  alt="Logo"
+                  className="w-full h-full object-cover rounded-full"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <ImageIcon
+                    size={14}
+                    style={{ color: "oklch(0.32 0.02 90)" }}
+                  />
+                </div>
+              )}
             </div>
-          )}
+            <input
+              ref={logoFileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleLogoFileChange}
+            />
+            <button
+              type="button"
+              onClick={() => logoFileInputRef.current?.click()}
+              disabled={isLogoUploading}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-broadcast tracking-wider transition-all disabled:opacity-60"
+              style={{
+                background: "oklch(0.12 0.03 255)",
+                border: "1px solid oklch(0.78 0.165 85 / 0.35)",
+                color: "oklch(0.78 0.165 85)",
+              }}
+            >
+              {isLogoUploading ? (
+                <>
+                  <Loader2 size={11} className="animate-spin" />
+                  {logoProgress}%
+                </>
+              ) : (
+                <>
+                  <Upload size={11} />
+                  UPLOAD
+                </>
+              )}
+            </button>
+            {state.logoUrl && (
+              <button
+                type="button"
+                onClick={() =>
+                  setState((prev) => ({ ...prev, logoUrl: "", isDirty: true }))
+                }
+                className="text-xs px-2 py-2 hover:opacity-80"
+                style={{
+                  background: "oklch(0.12 0.03 255)",
+                  border: "1px solid oklch(0.62 0.22 25 / 0.35)",
+                  color: "oklch(0.62 0.22 25)",
+                }}
+              >
+                <Trash2 size={11} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Owner Photo */}
+        <div>
+          <p
+            className="text-xs font-broadcast tracking-widest mb-2"
+            style={{ color: "oklch(0.78 0.165 85 / 0.8)" }}
+          >
+            OWNER PHOTO (circle)
+          </p>
+          <div className="flex items-center gap-3">
+            <div
+              className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden"
+              style={{
+                background: "oklch(0.16 0.07 85 / 0.25)",
+                border: "1px solid oklch(0.78 0.165 85 / 0.4)",
+              }}
+            >
+              {state.ownerPhotoUrl ? (
+                <img
+                  src={state.ownerPhotoUrl}
+                  alt="Owner"
+                  className="w-full h-full object-cover rounded-full"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <Crown size={14} style={{ color: "oklch(0.78 0.165 85)" }} />
+                </div>
+              )}
+            </div>
+            <input
+              ref={ownerPhotoFileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleOwnerPhotoFileChange}
+            />
+            <button
+              type="button"
+              onClick={() => ownerPhotoFileInputRef.current?.click()}
+              disabled={isOwnerPhotoUploading}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-broadcast tracking-wider transition-all disabled:opacity-60"
+              style={{
+                background: "oklch(0.12 0.03 255)",
+                border: "1px solid oklch(0.78 0.165 85 / 0.35)",
+                color: "oklch(0.78 0.165 85)",
+              }}
+            >
+              {isOwnerPhotoUploading ? (
+                <>
+                  <Loader2 size={11} className="animate-spin" />
+                  {ownerPhotoProgress}%
+                </>
+              ) : (
+                <>
+                  <Upload size={11} />
+                  UPLOAD
+                </>
+              )}
+            </button>
+            {state.ownerPhotoUrl && (
+              <button
+                type="button"
+                onClick={() =>
+                  setState((prev) => ({
+                    ...prev,
+                    ownerPhotoUrl: "",
+                    isDirty: true,
+                  }))
+                }
+                className="text-xs px-2 py-2 hover:opacity-80"
+                style={{
+                  background: "oklch(0.12 0.03 255)",
+                  border: "1px solid oklch(0.62 0.22 25 / 0.35)",
+                  color: "oklch(0.62 0.22 25)",
+                }}
+              >
+                <Trash2 size={11} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Icon Player Photo */}
+        <div>
+          <p
+            className="text-xs font-broadcast tracking-widest mb-2"
+            style={{ color: "oklch(0.82 0.15 82 / 0.8)" }}
+          >
+            ICON PLAYER PHOTO (circle)
+          </p>
+          <div className="flex items-center gap-3">
+            <div
+              className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden"
+              style={{
+                background: "oklch(0.16 0.06 75 / 0.22)",
+                border: "1px solid oklch(0.65 0.14 75 / 0.45)",
+              }}
+            >
+              {state.iconPhotoUrl ? (
+                <img
+                  src={state.iconPhotoUrl}
+                  alt="Icon Player"
+                  className="w-full h-full object-cover rounded-full"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center">
+                  <Star size={14} style={{ color: "oklch(0.65 0.14 75)" }} />
+                </div>
+              )}
+            </div>
+            <input
+              ref={iconPhotoFileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleIconPhotoFileChange}
+            />
+            <button
+              type="button"
+              onClick={() => iconPhotoFileInputRef.current?.click()}
+              disabled={isIconPhotoUploading}
+              className="flex items-center gap-1.5 px-3 py-2 text-xs font-broadcast tracking-wider transition-all disabled:opacity-60"
+              style={{
+                background: "oklch(0.12 0.03 255)",
+                border: "1px solid oklch(0.65 0.14 75 / 0.35)",
+                color: "oklch(0.82 0.15 82)",
+              }}
+            >
+              {isIconPhotoUploading ? (
+                <>
+                  <Loader2 size={11} className="animate-spin" />
+                  {iconPhotoProgress}%
+                </>
+              ) : (
+                <>
+                  <Upload size={11} />
+                  UPLOAD
+                </>
+              )}
+            </button>
+            {state.iconPhotoUrl && (
+              <button
+                type="button"
+                onClick={() =>
+                  setState((prev) => ({
+                    ...prev,
+                    iconPhotoUrl: "",
+                    isDirty: true,
+                  }))
+                }
+                className="text-xs px-2 py-2 hover:opacity-80"
+                style={{
+                  background: "oklch(0.12 0.03 255)",
+                  border: "1px solid oklch(0.62 0.22 25 / 0.35)",
+                  color: "oklch(0.62 0.22 25)",
+                }}
+              >
+                <Trash2 size={11} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
 

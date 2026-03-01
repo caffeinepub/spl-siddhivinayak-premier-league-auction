@@ -1,93 +1,43 @@
-# SPL – Siddhivinayak Premier League 2026
+# SPL – Siddhivinayak Premier League Auction
 
 ## Current State
-A cricket auction app exists but has accumulated bugs over many iterations: admin login failures, settings redirecting incorrectly, data polling conflicts, undo/unsell not working, and features breaking when others are added. A complete rewrite is needed for stability and reliability.
+- Squads page shows 10 team cards with 9 slots each (1 Owner, 1 Icon, 7 Auction)
+- Owner and Icon slots show only a Crown/Star icon placeholder with no photo
+- Team header shows "PTS REMAINING" purse balance
+- No unsold players panel
+- No hammer animation on sold/unsold events
+- Settings > Teams tab has team logo upload but no owner photo or icon photo upload fields
+- Backend Team type has ownerName and teamIconPlayer text fields but no photo URL fields
 
 ## Requested Changes (Diff)
 
 ### Add
-- Clean, stable backend with all auction logic in one actor
-- Three routes: `/` (landing), `/admin` (control panel), `/live` (broadcast screen)
-- Admin login stored in localStorage (password: SPL@2026)
-- Settings page accessible from admin panel (teams, players, league branding)
-- Instant optimistic UI for all admin actions (+100, SOLD, SELECT)
-- Working UNDO BID -- reverses last bid, updates backend immediately
-- Working UNSELL PLAYER -- restores player to upcoming, restores team purse/slot
-- Backend-persisted league settings (name, logo, team logos)
-- Live layout customization with sliders + preview
-- Team logos displayed in admin bid area and live screen
-- CSV export of auction results
-- Manual purse edit per team
-- Dashboard: total spent, most expensive player, remaining players count
-- Recharts bar chart on live screen
-- SOLD animation overlay on live screen
-- No countdown timer (removed by user request)
-- Polling every 3 seconds with parallel calls and high error tolerance
+- Backend: `ownerPhotoUrl` and `iconPhotoUrl` Text fields to Team type
+- Backend: `updateTeamPhotos(teamId, ownerPhotoUrl, iconPhotoUrl)` function
+- Settings > Teams: owner photo upload + icon photo upload fields (each with file picker and URL field), stored in localStorage (same approach as team logos)
+- Squads page: Owner slot shows uploaded owner photo (circle crop)
+- Squads page: Icon slot shows uploaded icon photo (circle crop)  
+- Squads page: Unsold players panel — a separate collapsible list at the bottom of the page showing all players with status "upcoming" (not yet auctioned), allowing admin to see who still needs to be sold
+- Squads page: Hammer animation overlay — when a player is sold (status changes from live→sold), show a brief hammer-strike animation with the team logo. When a player goes unsold (status reset to upcoming), show the same hammer animation WITHOUT a team logo
+- Squads page: Store last known "just sold" player+team info to trigger the animation on status change detection
 
 ### Modify
-- Full rewrite of all backend types and functions for correctness
-- Full rewrite of all frontend pages for reliability
-- Authentication: local password check (no network dependency)
-- Settings page: correct auth guard using localStorage
-- Data hook: parallel polling, optimistic updates, 8-failure error threshold
+- Squads page: Remove "PTS REMAINING" section from team header entirely
+- Squads page: Owner slot — replace Crown icon placeholder with actual owner photo (uploaded via settings), fallback to Crown icon if no photo
+- Squads page: Icon slot — replace Star icon placeholder with actual icon photo (uploaded via settings), fallback to Star icon if no photo
 
 ### Remove
-- All legacy/broken code from previous iterations
-- 10-second auction timer
-- sessionStorage usage (replaced with localStorage)
-- Sequential polling (replaced with parallel)
+- Squads page: Purse remaining display from team header card
 
 ## Implementation Plan
-
-### Backend (main.mo)
-1. Types: Team, Player, AuctionState, LeagueSettings, LiveLayoutSettings
-2. Stable vars for all state (survives upgrades)
-3. Seed data: 10 placeholder teams, 20 placeholder players
-4. Functions:
-   - `adminLogin(password)` → Bool
-   - `getTeams()` → [Team]
-   - `getPlayers()` → [Player]
-   - `getAuctionState()` → AuctionState
-   - `getLeagueSettings()` → LeagueSettings
-   - `getLiveLayoutSettings()` → LiveLayoutSettings
-   - `selectPlayer(id)` → Result
-   - `placeBid(teamId)` → Result (validates purse + min slot rule)
-   - `undoBid()` → Result (reverts last bid)
-   - `sellPlayer()` → Result (deducts purse, marks sold, locks team if 7 bought)
-   - `unsellPlayer()` → Result (reverts last sold)
-   - `resetAuction()` → Result
-   - `updateTeam(id, name, owner, icon, logoUrl)` → Result
-   - `editTeamPurse(id, amount)` → Result
-   - `addPlayer(name, category, basePrice, imageUrl, rating)` → Result
-   - `updatePlayer(id, ...)` → Result
-   - `deletePlayer(id)` → Result
-   - `updateLeagueSettings(shortName, fullName, logoUrl, logoSize, nameSize)` → Result
-   - `updateLiveLayoutSettings(...)` → Result
-   - `getResults()` → [SoldPlayer]
-   - `getDashboard()` → DashboardStats
-
-### Frontend Pages
-1. **LandingPage** (`/`) -- SPL branding, navigation to /admin and /live
-2. **AdminPage** (`/admin`) -- Password gate → control panel with:
-   - Header: league name, Export CSV, Settings, Live Screen buttons
-   - Left panel: dashboard stats + upcoming player list with SELECT buttons
-   - Center: active auction card (player photo, bid counter, leading team logo, SOLD, UNDO BID, UNSELL buttons)
-   - Right: team grid with +100 buttons, purse remaining, slots, lock state
-3. **LivePage** (`/live`) -- Broadcast screen with:
-   - Header with league logo and name
-   - Player spotlight (image, name, category, base price)
-   - Large bid counter with leading team name and logo
-   - Team purse table
-   - Recharts horizontal bar chart
-   - SOLD overlay animation
-4. **SettingsPage** (`/settings`) -- Tabs: LEAGUE, TEAMS, PLAYERS, LIVE LAYOUT
-   - League: name editor, logo upload, size sliders
-   - Teams: 10 rows, name/owner/icon/logo upload
-   - Players: add/edit/delete, image upload (base64), filter by category
-   - Live Layout: sliders for all screen elements + scaled real-time preview
-
-### Data & Hooks
-- `useAuctionData` hook: polls every 3s, parallel calls, 8-failure threshold, optimistic update functions
-- `useImageUpload` hook: converts file to base64 data URL, returns URL string
-- No Web Audio (removed for stability)
-- Recharts for bar chart
+1. Add `ownerPhotoUrl` and `iconPhotoUrl` to backend Team type and seed data (empty strings)
+2. Add `updateTeamPhotos` backend function
+3. Store owner/icon photos in localStorage keyed by team ID (avoid base64 in backend to keep it light) — use keys `spl_owner_photos` and `spl_icon_photos`
+4. Add helper functions in LandingPage.tsx for owner/icon photo storage
+5. Settings > TeamRow: add owner photo upload row and icon photo upload row (same UX as team logo upload)
+6. Squads > OwnerSlot: accept `photoUrl` prop, render photo if present
+7. Squads > IconSlot: accept `photoUrl` prop, render photo if present
+8. Squads > TeamSquadCard: remove purse remaining section from header
+9. Squads > HammerAnimation: full-screen overlay with animated hammer SVG + optional team logo, triggered for 2.5s
+10. Squads > Unsold Players Panel: collapsible section below squad showing all upcoming players with photo, name, category, base price
+11. Wire animation trigger: compare previous player statuses to current on each poll cycle

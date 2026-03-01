@@ -7,9 +7,9 @@ import Text "mo:core/Text";
 import List "mo:core/List";
 import Array "mo:core/Array";
 import Iter "mo:core/Iter";
-import Migration "migration";
 
-(with migration = Migration.run)
+
+
 actor {
   include MixinStorage();
 

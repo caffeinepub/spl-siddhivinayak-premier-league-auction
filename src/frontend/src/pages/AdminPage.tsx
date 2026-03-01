@@ -1202,6 +1202,19 @@ function AdminPanel() {
           </button>
           <button
             type="button"
+            onClick={() => navigate({ to: "/squads" })}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-broadcast tracking-wider hover:opacity-80"
+            style={{
+              background: "oklch(0.78 0.165 85 / 0.12)",
+              border: "1px solid oklch(0.78 0.165 85 / 0.3)",
+              color: "oklch(0.78 0.165 85)",
+            }}
+          >
+            <Users size={11} />
+            <span className="hidden sm:inline">SQUADS</span>
+          </button>
+          <button
+            type="button"
             onClick={() => navigate({ to: "/live" })}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-broadcast tracking-wider hover:opacity-80"
             style={{
