@@ -8,42 +8,85 @@
 
 import { IDL } from '@icp-sdk/core/candid';
 
+export const _CaffeineStorageCreateCertificateResult = IDL.Record({
+  'method' : IDL.Text,
+  'blob_hash' : IDL.Text,
+});
+export const _CaffeineStorageRefillInformation = IDL.Record({
+  'proposed_top_up_amount' : IDL.Opt(IDL.Nat),
+});
+export const _CaffeineStorageRefillResult = IDL.Record({
+  'success' : IDL.Opt(IDL.Bool),
+  'topped_up_amount' : IDL.Opt(IDL.Nat),
+});
 export const Result = IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text });
 export const AuctionState = IDL.Record({
-  'current_player_id' : IDL.Opt(IDL.Nat),
-  'current_bid' : IDL.Nat,
-  'leading_team_id' : IDL.Opt(IDL.Nat),
-  'is_active' : IDL.Bool,
+  'currentPlayerId' : IDL.Opt(IDL.Nat),
+  'leadingTeamId' : IDL.Opt(IDL.Nat),
+  'isActive' : IDL.Bool,
+  'currentBid' : IDL.Nat,
 });
 export const Player = IDL.Record({
   'id' : IDL.Nat,
   'status' : IDL.Text,
-  'image_url' : IDL.Text,
+  'soldTo' : IDL.Opt(IDL.Nat),
   'name' : IDL.Text,
-  'base_price' : IDL.Nat,
-  'sold_to' : IDL.Opt(IDL.Nat),
+  'soldPrice' : IDL.Opt(IDL.Nat),
+  'imageUrl' : IDL.Text,
   'category' : IDL.Text,
   'rating' : IDL.Nat,
-  'sold_price' : IDL.Opt(IDL.Nat),
+  'basePrice' : IDL.Nat,
 });
 export const Dashboard = IDL.Record({
-  'total_spent' : IDL.Nat,
-  'remaining_players' : IDL.Nat,
-  'most_expensive_player' : IDL.Opt(Player),
-  'sold_players' : IDL.Nat,
+  'remainingPlayers' : IDL.Nat,
+  'totalSpent' : IDL.Nat,
+  'mostExpensivePlayer' : IDL.Opt(Player),
+  'soldPlayers' : IDL.Nat,
 });
+export const ExternalBlob = IDL.Vec(IDL.Nat8);
 export const Team = IDL.Record({
   'id' : IDL.Nat,
+  'purseAmountLeft' : IDL.Nat,
+  'teamIconPlayer' : IDL.Text,
+  'teamLogo' : IDL.Opt(ExternalBlob),
+  'isTeamLocked' : IDL.Bool,
+  'ownerName' : IDL.Text,
   'name' : IDL.Text,
-  'purse_total' : IDL.Nat,
-  'icon_player_name' : IDL.Text,
-  'purse_remaining' : IDL.Nat,
-  'players_bought' : IDL.Nat,
-  'owner_name' : IDL.Text,
-  'is_locked' : IDL.Bool,
+  'purseAmountTotal' : IDL.Nat,
+  'numberOfPlayers' : IDL.Nat,
+});
+export const PlayerWithTeam = IDL.Record({
+  'player' : Player,
+  'team' : IDL.Opt(Team),
 });
 
 export const idlService = IDL.Service({
+  '_caffeineStorageBlobIsLive' : IDL.Func(
+      [IDL.Vec(IDL.Nat8)],
+      [IDL.Bool],
+      ['query'],
+    ),
+  '_caffeineStorageBlobsToDelete' : IDL.Func(
+      [],
+      [IDL.Vec(IDL.Vec(IDL.Nat8))],
+      ['query'],
+    ),
+  '_caffeineStorageConfirmBlobDeletion' : IDL.Func(
+      [IDL.Vec(IDL.Vec(IDL.Nat8))],
+      [],
+      [],
+    ),
+  '_caffeineStorageCreateCertificate' : IDL.Func(
+      [IDL.Text],
+      [_CaffeineStorageCreateCertificateResult],
+      [],
+    ),
+  '_caffeineStorageRefillCashier' : IDL.Func(
+      [IDL.Opt(_CaffeineStorageRefillInformation)],
+      [_CaffeineStorageRefillResult],
+      [],
+    ),
+  '_caffeineStorageUpdateGatewayPrincipals' : IDL.Func([], [], []),
   'addPlayer' : IDL.Func(
       [IDL.Text, IDL.Text, IDL.Nat, IDL.Text, IDL.Nat],
       [Result],
@@ -54,12 +97,12 @@ export const idlService = IDL.Service({
   'editTeamPurse' : IDL.Func([IDL.Nat, IDL.Nat], [Result], []),
   'getAuctionState' : IDL.Func([], [AuctionState], ['query']),
   'getDashboard' : IDL.Func([], [Dashboard], ['query']),
+  'getPlayerById' : IDL.Func([IDL.Nat], [IDL.Opt(Player)], ['query']),
   'getPlayers' : IDL.Func([], [IDL.Vec(Player)], ['query']),
-  'getResults' : IDL.Func(
-      [],
-      [IDL.Vec(IDL.Tuple(Player, IDL.Opt(Team)))],
-      ['query'],
-    ),
+  'getPlayersByCategory' : IDL.Func([IDL.Text], [IDL.Vec(Player)], ['query']),
+  'getRemainingPurse' : IDL.Func([IDL.Nat], [IDL.Opt(IDL.Nat)], ['query']),
+  'getResults' : IDL.Func([], [IDL.Vec(PlayerWithTeam)], ['query']),
+  'getTeamById' : IDL.Func([IDL.Nat], [IDL.Opt(Team)], ['query']),
   'getTeams' : IDL.Func([], [IDL.Vec(Team)], ['query']),
   'placeBid' : IDL.Func([IDL.Nat], [Result], []),
   'resetAuction' : IDL.Func([], [], []),
@@ -75,47 +118,91 @@ export const idlService = IDL.Service({
       [Result],
       [],
     ),
+  'uploadTeamLogo' : IDL.Func([IDL.Nat, ExternalBlob], [Result], []),
 });
 
 export const idlInitArgs = [];
 
 export const idlFactory = ({ IDL }) => {
+  const _CaffeineStorageCreateCertificateResult = IDL.Record({
+    'method' : IDL.Text,
+    'blob_hash' : IDL.Text,
+  });
+  const _CaffeineStorageRefillInformation = IDL.Record({
+    'proposed_top_up_amount' : IDL.Opt(IDL.Nat),
+  });
+  const _CaffeineStorageRefillResult = IDL.Record({
+    'success' : IDL.Opt(IDL.Bool),
+    'topped_up_amount' : IDL.Opt(IDL.Nat),
+  });
   const Result = IDL.Variant({ 'ok' : IDL.Null, 'err' : IDL.Text });
   const AuctionState = IDL.Record({
-    'current_player_id' : IDL.Opt(IDL.Nat),
-    'current_bid' : IDL.Nat,
-    'leading_team_id' : IDL.Opt(IDL.Nat),
-    'is_active' : IDL.Bool,
+    'currentPlayerId' : IDL.Opt(IDL.Nat),
+    'leadingTeamId' : IDL.Opt(IDL.Nat),
+    'isActive' : IDL.Bool,
+    'currentBid' : IDL.Nat,
   });
   const Player = IDL.Record({
     'id' : IDL.Nat,
     'status' : IDL.Text,
-    'image_url' : IDL.Text,
+    'soldTo' : IDL.Opt(IDL.Nat),
     'name' : IDL.Text,
-    'base_price' : IDL.Nat,
-    'sold_to' : IDL.Opt(IDL.Nat),
+    'soldPrice' : IDL.Opt(IDL.Nat),
+    'imageUrl' : IDL.Text,
     'category' : IDL.Text,
     'rating' : IDL.Nat,
-    'sold_price' : IDL.Opt(IDL.Nat),
+    'basePrice' : IDL.Nat,
   });
   const Dashboard = IDL.Record({
-    'total_spent' : IDL.Nat,
-    'remaining_players' : IDL.Nat,
-    'most_expensive_player' : IDL.Opt(Player),
-    'sold_players' : IDL.Nat,
+    'remainingPlayers' : IDL.Nat,
+    'totalSpent' : IDL.Nat,
+    'mostExpensivePlayer' : IDL.Opt(Player),
+    'soldPlayers' : IDL.Nat,
   });
+  const ExternalBlob = IDL.Vec(IDL.Nat8);
   const Team = IDL.Record({
     'id' : IDL.Nat,
+    'purseAmountLeft' : IDL.Nat,
+    'teamIconPlayer' : IDL.Text,
+    'teamLogo' : IDL.Opt(ExternalBlob),
+    'isTeamLocked' : IDL.Bool,
+    'ownerName' : IDL.Text,
     'name' : IDL.Text,
-    'purse_total' : IDL.Nat,
-    'icon_player_name' : IDL.Text,
-    'purse_remaining' : IDL.Nat,
-    'players_bought' : IDL.Nat,
-    'owner_name' : IDL.Text,
-    'is_locked' : IDL.Bool,
+    'purseAmountTotal' : IDL.Nat,
+    'numberOfPlayers' : IDL.Nat,
+  });
+  const PlayerWithTeam = IDL.Record({
+    'player' : Player,
+    'team' : IDL.Opt(Team),
   });
   
   return IDL.Service({
+    '_caffeineStorageBlobIsLive' : IDL.Func(
+        [IDL.Vec(IDL.Nat8)],
+        [IDL.Bool],
+        ['query'],
+      ),
+    '_caffeineStorageBlobsToDelete' : IDL.Func(
+        [],
+        [IDL.Vec(IDL.Vec(IDL.Nat8))],
+        ['query'],
+      ),
+    '_caffeineStorageConfirmBlobDeletion' : IDL.Func(
+        [IDL.Vec(IDL.Vec(IDL.Nat8))],
+        [],
+        [],
+      ),
+    '_caffeineStorageCreateCertificate' : IDL.Func(
+        [IDL.Text],
+        [_CaffeineStorageCreateCertificateResult],
+        [],
+      ),
+    '_caffeineStorageRefillCashier' : IDL.Func(
+        [IDL.Opt(_CaffeineStorageRefillInformation)],
+        [_CaffeineStorageRefillResult],
+        [],
+      ),
+    '_caffeineStorageUpdateGatewayPrincipals' : IDL.Func([], [], []),
     'addPlayer' : IDL.Func(
         [IDL.Text, IDL.Text, IDL.Nat, IDL.Text, IDL.Nat],
         [Result],
@@ -126,12 +213,12 @@ export const idlFactory = ({ IDL }) => {
     'editTeamPurse' : IDL.Func([IDL.Nat, IDL.Nat], [Result], []),
     'getAuctionState' : IDL.Func([], [AuctionState], ['query']),
     'getDashboard' : IDL.Func([], [Dashboard], ['query']),
+    'getPlayerById' : IDL.Func([IDL.Nat], [IDL.Opt(Player)], ['query']),
     'getPlayers' : IDL.Func([], [IDL.Vec(Player)], ['query']),
-    'getResults' : IDL.Func(
-        [],
-        [IDL.Vec(IDL.Tuple(Player, IDL.Opt(Team)))],
-        ['query'],
-      ),
+    'getPlayersByCategory' : IDL.Func([IDL.Text], [IDL.Vec(Player)], ['query']),
+    'getRemainingPurse' : IDL.Func([IDL.Nat], [IDL.Opt(IDL.Nat)], ['query']),
+    'getResults' : IDL.Func([], [IDL.Vec(PlayerWithTeam)], ['query']),
+    'getTeamById' : IDL.Func([IDL.Nat], [IDL.Opt(Team)], ['query']),
     'getTeams' : IDL.Func([], [IDL.Vec(Team)], ['query']),
     'placeBid' : IDL.Func([IDL.Nat], [Result], []),
     'resetAuction' : IDL.Func([], [], []),
@@ -147,6 +234,7 @@ export const idlFactory = ({ IDL }) => {
         [Result],
         [],
       ),
+    'uploadTeamLogo' : IDL.Func([IDL.Nat, ExternalBlob], [Result], []),
   });
 };
 

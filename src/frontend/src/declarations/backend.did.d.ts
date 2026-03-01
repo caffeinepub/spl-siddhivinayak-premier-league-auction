@@ -11,49 +11,82 @@ import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
 export interface AuctionState {
-  'current_player_id' : [] | [bigint],
-  'current_bid' : bigint,
-  'leading_team_id' : [] | [bigint],
-  'is_active' : boolean,
+  'currentPlayerId' : [] | [bigint],
+  'leadingTeamId' : [] | [bigint],
+  'isActive' : boolean,
+  'currentBid' : bigint,
 }
 export interface Dashboard {
-  'total_spent' : bigint,
-  'remaining_players' : bigint,
-  'most_expensive_player' : [] | [Player],
-  'sold_players' : bigint,
+  'remainingPlayers' : bigint,
+  'totalSpent' : bigint,
+  'mostExpensivePlayer' : [] | [Player],
+  'soldPlayers' : bigint,
 }
+export type ExternalBlob = Uint8Array;
 export interface Player {
   'id' : bigint,
   'status' : string,
-  'image_url' : string,
+  'soldTo' : [] | [bigint],
   'name' : string,
-  'base_price' : bigint,
-  'sold_to' : [] | [bigint],
+  'soldPrice' : [] | [bigint],
+  'imageUrl' : string,
   'category' : string,
   'rating' : bigint,
-  'sold_price' : [] | [bigint],
+  'basePrice' : bigint,
 }
+export interface PlayerWithTeam { 'player' : Player, 'team' : [] | [Team] }
 export type Result = { 'ok' : null } |
   { 'err' : string };
 export interface Team {
   'id' : bigint,
+  'purseAmountLeft' : bigint,
+  'teamIconPlayer' : string,
+  'teamLogo' : [] | [ExternalBlob],
+  'isTeamLocked' : boolean,
+  'ownerName' : string,
   'name' : string,
-  'purse_total' : bigint,
-  'icon_player_name' : string,
-  'purse_remaining' : bigint,
-  'players_bought' : bigint,
-  'owner_name' : string,
-  'is_locked' : boolean,
+  'purseAmountTotal' : bigint,
+  'numberOfPlayers' : bigint,
+}
+export interface _CaffeineStorageCreateCertificateResult {
+  'method' : string,
+  'blob_hash' : string,
+}
+export interface _CaffeineStorageRefillInformation {
+  'proposed_top_up_amount' : [] | [bigint],
+}
+export interface _CaffeineStorageRefillResult {
+  'success' : [] | [boolean],
+  'topped_up_amount' : [] | [bigint],
 }
 export interface _SERVICE {
+  '_caffeineStorageBlobIsLive' : ActorMethod<[Uint8Array], boolean>,
+  '_caffeineStorageBlobsToDelete' : ActorMethod<[], Array<Uint8Array>>,
+  '_caffeineStorageConfirmBlobDeletion' : ActorMethod<
+    [Array<Uint8Array>],
+    undefined
+  >,
+  '_caffeineStorageCreateCertificate' : ActorMethod<
+    [string],
+    _CaffeineStorageCreateCertificateResult
+  >,
+  '_caffeineStorageRefillCashier' : ActorMethod<
+    [[] | [_CaffeineStorageRefillInformation]],
+    _CaffeineStorageRefillResult
+  >,
+  '_caffeineStorageUpdateGatewayPrincipals' : ActorMethod<[], undefined>,
   'addPlayer' : ActorMethod<[string, string, bigint, string, bigint], Result>,
   'adminLogin' : ActorMethod<[string], boolean>,
   'deletePlayer' : ActorMethod<[bigint], Result>,
   'editTeamPurse' : ActorMethod<[bigint, bigint], Result>,
   'getAuctionState' : ActorMethod<[], AuctionState>,
   'getDashboard' : ActorMethod<[], Dashboard>,
+  'getPlayerById' : ActorMethod<[bigint], [] | [Player]>,
   'getPlayers' : ActorMethod<[], Array<Player>>,
-  'getResults' : ActorMethod<[], Array<[Player, [] | [Team]]>>,
+  'getPlayersByCategory' : ActorMethod<[string], Array<Player>>,
+  'getRemainingPurse' : ActorMethod<[bigint], [] | [bigint]>,
+  'getResults' : ActorMethod<[], Array<PlayerWithTeam>>,
+  'getTeamById' : ActorMethod<[bigint], [] | [Team]>,
   'getTeams' : ActorMethod<[], Array<Team>>,
   'placeBid' : ActorMethod<[bigint], Result>,
   'resetAuction' : ActorMethod<[], undefined>,
@@ -64,6 +97,7 @@ export interface _SERVICE {
     Result
   >,
   'updateTeam' : ActorMethod<[bigint, string, string, string], Result>,
+  'uploadTeamLogo' : ActorMethod<[bigint, ExternalBlob], Result>,
 }
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];

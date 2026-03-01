@@ -1,67 +1,77 @@
+import MixinStorage "blob-storage/Mixin";
+import Storage "blob-storage/Storage";
 import Map "mo:core/Map";
+import Runtime "mo:core/Runtime";
 import Nat "mo:core/Nat";
 import Text "mo:core/Text";
-import Order "mo:core/Order";
 import List "mo:core/List";
-import Iter "mo:core/Iter";
 import Array "mo:core/Array";
-import Runtime "mo:core/Runtime";
+import Iter "mo:core/Iter";
+import Migration "migration";
 
-
-
+(with migration = Migration.run)
 actor {
+  include MixinStorage();
+
   type Team = {
     id : Nat;
     name : Text;
-    purse_total : Nat;
-    purse_remaining : Nat;
-    players_bought : Nat;
-    owner_name : Text;
-    icon_player_name : Text;
-    is_locked : Bool;
-  };
-
-  module Team {
-    public func compare(team1 : Team, team2 : Team) : Order.Order {
-      Nat.compare(team1.id, team2.id);
-    };
+    purseAmountTotal : Nat;
+    purseAmountLeft : Nat;
+    numberOfPlayers : Nat;
+    ownerName : Text;
+    teamIconPlayer : Text;
+    isTeamLocked : Bool;
+    teamLogo : ?Storage.ExternalBlob;
   };
 
   type Player = {
     id : Nat;
     name : Text;
     category : Text;
-    base_price : Nat;
-    image_url : Text;
-    sold_price : ?Nat;
-    sold_to : ?Nat;
+    basePrice : Nat;
+    imageUrl : Text;
+    soldPrice : ?Nat;
+    soldTo : ?Nat;
     status : Text;
     rating : Nat;
   };
 
   type AuctionState = {
-    current_player_id : ?Nat;
-    current_bid : Nat;
-    leading_team_id : ?Nat;
-    is_active : Bool;
+    currentPlayerId : ?Nat;
+    currentBid : Nat;
+    leadingTeamId : ?Nat;
+    isActive : Bool;
   };
 
-  public type Result = { #ok; #err : Text };
+  type Result = { #ok; #err : Text };
+
+  type Dashboard = {
+    totalSpent : Nat;
+    mostExpensivePlayer : ?Player;
+    remainingPlayers : Nat;
+    soldPlayers : Nat;
+  };
+
+  type PlayerWithTeam = {
+    player : Player;
+    team : ?Team;
+  };
 
   let teams = Map.empty<Nat, Team>();
   let players = Map.empty<Nat, Player>();
 
   var auctionState : AuctionState = {
-    current_player_id = null;
-    current_bid = 0;
-    leading_team_id = null;
-    is_active = false;
+    currentPlayerId = null;
+    currentBid = 0;
+    leadingTeamId = null;
+    isActive = false;
   };
 
   var nextPlayerId = 1;
 
   func seedTeams() {
-    let teamData = [
+    let teamData : [(Nat, Text, Text, Text)] = [
       (1, "Mumbai Warriors", "Rohit Sharma", "Virat Kohli"),
       (2, "Chennai Kings", "MS Dhoni", "Ravindra Jadeja"),
       (3, "Delhi Capitals", "Rishabh Pant", "Shikhar Dhawan"),
@@ -78,12 +88,13 @@ actor {
       let team : Team = {
         id;
         name;
-        purse_total = 20500;
-        purse_remaining = 20000;
-        players_bought = 0;
-        owner_name = owner;
-        icon_player_name = icon;
-        is_locked = false;
+        purseAmountTotal = 20500; // Including 5% extra for fees/deductions
+        purseAmountLeft = 20000;
+        numberOfPlayers = 0;
+        ownerName = owner;
+        teamIconPlayer = icon;
+        isTeamLocked = false;
+        teamLogo = null;
       };
       teams.add(id, team);
     };
@@ -103,15 +114,15 @@ actor {
       ("Nathan Coulter-Nile", "Allrounder", 100, "url10", 3),
     ];
 
-    for ((name, category, base_price, image_url, rating) in playerData.values()) {
+    for ((name, category, basePrice, imageUrl, rating) in playerData.values()) {
       let player = {
         id = nextPlayerId;
         name;
         category;
-        base_price;
-        image_url;
-        sold_price = null;
-        sold_to = null;
+        basePrice;
+        imageUrl;
+        soldPrice = null;
+        soldTo = null;
         status = "upcoming";
         rating;
       };
@@ -119,9 +130,6 @@ actor {
       nextPlayerId += 1;
     };
   };
-
-  seedTeams();
-  seedPlayers();
 
   func updatePlayerStatus(playerId : Nat, status : Text) {
     switch (players.get(playerId)) {
@@ -134,16 +142,24 @@ actor {
   };
 
   func calculateRemainingRequirement(team : Team) : Nat {
-    let playersNeeded = 7 - team.players_bought;
+    let playersNeeded = 7 - team.numberOfPlayers;
     playersNeeded * 100;
   };
 
+  // Initialization
+  seedTeams();
+  seedPlayers();
+
+  //------------------------------------
+  // Query Functions
+  //------------------------------------
+
   public shared ({ caller }) func adminLogin(password : Text) : async Bool {
-    password == "SPL@2025";
+    password == "SPL@2026";
   };
 
   public query ({ caller }) func getTeams() : async [Team] {
-    teams.values().toArray().sort();
+    teams.values().toArray();
   };
 
   public query ({ caller }) func getPlayers() : async [Player] {
@@ -154,162 +170,19 @@ actor {
     auctionState;
   };
 
-  public shared ({ caller }) func selectPlayer(playerId : Nat) : async Result {
-    switch (players.get(playerId)) {
-      case (?player) {
-        if (player.status != "upcoming") {
-          #err("Player is not available for auction");
-        } else {
-          updatePlayerStatus(playerId, "live");
-          auctionState := {
-            auctionState with
-            current_player_id = ?playerId;
-            current_bid = player.base_price;
-            leading_team_id = null;
-            is_active = true;
-          };
-          #ok;
-        };
-      };
-      case (null) { #err("Player not found") };
-    };
-  };
-
-  public shared ({ caller }) func placeBid(teamId : Nat) : async Result {
-    switch (teams.get(teamId)) {
-      case (?team) {
-        if (team.is_locked) {
-          return #err("Team is already locked");
-        };
-
-        let newBid = auctionState.current_bid + 100;
-        if (team.purse_remaining < newBid) {
-          return #err("Insufficient funds for this bid");
-        };
-
-        let remainingRequirement = calculateRemainingRequirement(team);
-        if (
-          team.purse_remaining - newBid < remainingRequirement
-        ) {
-          return #err("Bid would violate remaining purse requirements");
-        };
-
-        auctionState := {
-          auctionState with
-          current_bid = newBid;
-          leading_team_id = ?teamId;
-        };
-
-        #ok;
-      };
-      case (null) { #err("Team not found") };
-    };
-  };
-
-  public shared ({ caller }) func sellPlayer() : async Result {
-    if (not auctionState.is_active) {
-      return #err("No active auction");
-    };
-
-    switch (
-      (auctionState.current_player_id, auctionState.leading_team_id)
-    ) {
-      case (?playerId, ?teamId) {
-        switch ((players.get(playerId), teams.get(teamId))) {
-          case (?player, ?team) {
-            let updatedTeam = {
-              team with
-              purse_remaining = team.purse_remaining - auctionState.current_bid;
-              players_bought = team.players_bought + 1;
-              is_locked = team.players_bought + 1 == 7;
-            };
-            teams.add(teamId, updatedTeam);
-
-            let updatedPlayer = {
-              player with
-              sold_price = ?auctionState.current_bid;
-              sold_to = ?teamId;
-              status = "sold";
-            };
-            players.add(playerId, updatedPlayer);
-
-            auctionState := {
-              current_player_id = null;
-              current_bid = 0;
-              leading_team_id = null;
-              is_active = false;
-            };
-
-            #ok;
-          };
-          case (null, _) { #err("Player not found") };
-          case (_, null) { #err("Team not found") };
-        };
-      };
-      case (_) { #err("Invalid auction state") };
-    };
-  };
-
-  public shared ({ caller }) func resetAuction() : async () {
-    for ((id, team) in teams.entries()) {
-      let resetTeam = {
-        team with
-        purse_remaining = 20000;
-        players_bought = 0;
-        is_locked = false;
-      };
-      teams.add(id, resetTeam);
-    };
-
-    for ((id, player) in players.entries()) {
-      let resetPlayer = {
-        player with
-        status = "upcoming";
-        sold_price = null;
-        sold_to = null;
-      };
-      players.add(id, resetPlayer);
-    };
-
-    auctionState := {
-      current_player_id = null;
-      current_bid = 0;
-      leading_team_id = null;
-      is_active = false;
-    };
-  };
-
-  public shared ({ caller }) func editTeamPurse(teamId : Nat, newPurse : Nat) : async Result {
-    switch (teams.get(teamId)) {
-      case (?team) {
-        let updatedTeam = { team with purse_remaining = newPurse };
-        teams.add(teamId, updatedTeam);
-        #ok;
-      };
-      case (null) { #err("Team not found") };
-    };
-  };
-
-  public query ({ caller }) func getResults() : async [(Player, ?Team)] {
+  public query ({ caller }) func getResults() : async [PlayerWithTeam] {
     let soldPlayers = players.values().toList<Player>();
     let filteredSoldPlayers = soldPlayers.filter(func(player) { player.status == "sold" });
 
-    let results = List.empty<(Player, ?Team)>();
+    let results = List.empty<PlayerWithTeam>();
     for (player in filteredSoldPlayers.values()) {
-      let team = switch (player.sold_to) {
+      let team = switch (player.soldTo) {
         case (null) { null };
         case (?teamId) { teams.get(teamId) };
       };
-      results.add((player, team));
+      results.add({ player; team });
     };
     results.toArray();
-  };
-
-  type Dashboard = {
-    total_spent : Nat;
-    most_expensive_player : ?Player;
-    remaining_players : Nat;
-    sold_players : Nat;
   };
 
   public query ({ caller }) func getDashboard() : async Dashboard {
@@ -324,7 +197,7 @@ actor {
 
     allPlayers.values().forEach(
       func(player) {
-        switch (player.sold_price) {
+        switch (player.soldPrice) {
           case (?price) {
             totalSpent += price;
             if (price > mostExpensivePrice) {
@@ -338,12 +211,168 @@ actor {
     );
 
     {
-      total_spent = totalSpent;
-      most_expensive_player = mostExpensivePlayer;
-      remaining_players = remainingPlayers;
-      sold_players = soldPlayers;
+      totalSpent;
+      mostExpensivePlayer;
+      remainingPlayers;
+      soldPlayers;
     };
   };
+
+  public query ({ caller }) func getTeamById(teamId : Nat) : async ?Team {
+    teams.get(teamId);
+  };
+
+  public query ({ caller }) func getPlayerById(playerId : Nat) : async ?Player {
+    players.get(playerId);
+  };
+
+  //------------------------------------
+  // Auction Functions
+  //------------------------------------
+
+  public shared ({ caller }) func selectPlayer(playerId : Nat) : async Result {
+    switch (players.get(playerId)) {
+      case (?player) {
+        if (player.status != "upcoming") {
+          #err("Player is not available for auction");
+        } else {
+          updatePlayerStatus(playerId, "live");
+          auctionState := {
+            auctionState with
+            currentPlayerId = ?playerId;
+            currentBid = player.basePrice;
+            leadingTeamId = null;
+            isActive = true;
+          };
+          #ok;
+        };
+      };
+      case (null) { #err("Player not found") };
+    };
+  };
+
+  public shared ({ caller }) func placeBid(teamId : Nat) : async Result {
+    switch (teams.get(teamId)) {
+      case (?team) {
+        if (team.isTeamLocked) {
+          return #err("Team is already locked");
+        };
+
+        let newBid = auctionState.currentBid + 100;
+        if (team.purseAmountLeft < newBid) {
+          return #err("Insufficient funds for this bid");
+        };
+
+        let remainingRequirement = calculateRemainingRequirement(team);
+        if (
+          team.purseAmountLeft - newBid < remainingRequirement
+        ) {
+          return #err("Bid would violate remaining purse requirements");
+        };
+
+        auctionState := {
+          auctionState with
+          currentBid = newBid;
+          leadingTeamId = ?teamId;
+        };
+
+        #ok;
+      };
+      case (null) { #err("Team not found") };
+    };
+  };
+
+  public shared ({ caller }) func sellPlayer() : async Result {
+    if (not auctionState.isActive) {
+      return #err("No active auction");
+    };
+
+    switch (
+      (auctionState.currentPlayerId, auctionState.leadingTeamId)
+    ) {
+      case (?playerId, ?teamId) {
+        switch ((players.get(playerId), teams.get(teamId))) {
+          case (?player, ?team) {
+            let updatedTeam = {
+              team with
+              purseAmountLeft = team.purseAmountLeft - auctionState.currentBid;
+              numberOfPlayers = team.numberOfPlayers + 1;
+              isTeamLocked = team.numberOfPlayers + 1 == 7;
+            };
+            teams.add(teamId, updatedTeam);
+
+            let updatedPlayer = {
+              player with
+              soldPrice = ?auctionState.currentBid;
+              soldTo = ?teamId;
+              status = "sold";
+            };
+            players.add(playerId, updatedPlayer);
+
+            auctionState := {
+              currentPlayerId = null;
+              currentBid = 0;
+              leadingTeamId = null;
+              isActive = false;
+            };
+
+            #ok;
+          };
+          case (null, _) { #err("Player not found") };
+          case (_, null) { #err("Team not found") };
+        };
+      };
+      case (_) { #err("Invalid auction state") };
+    };
+  };
+
+  //------------------------------------
+  // Admin Functions
+  //------------------------------------
+
+  public shared ({ caller }) func resetAuction() : async () {
+    for ((id, team) in teams.entries()) {
+      let resetTeam = {
+        team with
+        purseAmountLeft = 20000;
+        numberOfPlayers = 0;
+        isTeamLocked = false;
+      };
+      teams.add(id, resetTeam);
+    };
+
+    for ((id, player) in players.entries()) {
+      let resetPlayer = {
+        player with
+        status = "upcoming";
+        soldPrice = null;
+        soldTo = null;
+      };
+      players.add(id, resetPlayer);
+    };
+
+    auctionState := {
+      currentPlayerId = null;
+      currentBid = 0;
+      leadingTeamId = null;
+      isActive = false;
+    };
+  };
+
+  public shared ({ caller }) func editTeamPurse(teamId : Nat, newPurse : Nat) : async Result {
+    switch (teams.get(teamId)) {
+      case (?team) {
+        let updatedTeam = { team with purseAmountLeft = newPurse };
+        teams.add(teamId, updatedTeam);
+        #ok;
+      };
+      case (null) { #err("Team not found") };
+    };
+  };
+
+  //------------------------------------
+  // Team Management
+  //------------------------------------
 
   public shared ({ caller }) func updateTeam(teamId : Nat, name : Text, ownerName : Text, iconPlayerName : Text) : async Result {
     switch (teams.get(teamId)) {
@@ -351,8 +380,8 @@ actor {
         let updatedTeam = {
           team with
           name;
-          owner_name = ownerName;
-          icon_player_name = iconPlayerName;
+          ownerName;
+          teamIconPlayer = iconPlayerName;
         };
         teams.add(teamId, updatedTeam);
         #ok;
@@ -361,15 +390,30 @@ actor {
     };
   };
 
+  public shared ({ caller }) func uploadTeamLogo(teamId : Nat, blob : Storage.ExternalBlob) : async Result {
+    switch (teams.get(teamId)) {
+      case (?team) {
+        let updatedTeam = { team with teamLogo = ?blob };
+        teams.add(teamId, updatedTeam);
+        #ok;
+      };
+      case (null) { #err("Team not found") };
+    };
+  };
+
+  //------------------------------------
+  // Player Management
+  //------------------------------------
+
   public shared ({ caller }) func addPlayer(name : Text, category : Text, basePrice : Nat, imageUrl : Text, rating : Nat) : async Result {
     let player = {
       id = nextPlayerId;
       name;
       category;
-      base_price = basePrice;
-      image_url = imageUrl;
-      sold_price = null;
-      sold_to = null;
+      basePrice;
+      imageUrl;
+      soldPrice = null;
+      soldTo = null;
       status = "upcoming";
       rating;
     };
@@ -388,8 +432,8 @@ actor {
           player with
           name;
           category;
-          base_price = basePrice;
-          image_url = imageUrl;
+          basePrice;
+          imageUrl;
           rating;
         };
         players.add(playerId, updatedPlayer);
@@ -411,4 +455,38 @@ actor {
       case (null) { #err("Player not found") };
     };
   };
+
+  //------------------------------------
+  // Additional Helper Functions
+  //------------------------------------
+
+  public query ({ caller }) func getPlayersByCategory(category : Text) : async [Player] {
+    let filteredPlayers = players.values().toList<Player>().filter(
+      func(player) { Text.equal(player.category, category) }
+    );
+    filteredPlayers.toArray();
+  };
+
+  public query ({ caller }) func getRemainingPurse(teamId : Nat) : async ?Nat {
+    switch (teams.get(teamId)) {
+      case (?team) { ?team.purseAmountLeft };
+      case (null) { null };
+    };
+  };
+
+  //------------------------------------
+  // Player Image Upload (future enhancement)
+  //------------------------------------
+  /*
+  public shared ({ caller }) func uploadPlayerImage(playerId : Nat, blob : ExternalBlob) : async Result {
+    switch (players.get(playerId)) {
+      case (?player) {
+        let updatedPlayer = { player with imageUrl = blob.id };
+        players.add(playerId, updatedPlayer);
+        #ok;
+      };
+      case (null) { #err("Player not found") };
+    };
+  };
+  */
 };

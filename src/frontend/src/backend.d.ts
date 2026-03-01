@@ -7,28 +7,23 @@ export interface None {
     __kind__: "None";
 }
 export type Option<T> = Some<T> | None;
+export class ExternalBlob {
+    getBytes(): Promise<Uint8Array<ArrayBuffer>>;
+    getDirectURL(): string;
+    static fromURL(url: string): ExternalBlob;
+    static fromBytes(blob: Uint8Array<ArrayBuffer>): ExternalBlob;
+    withUploadProgress(onProgress: (percentage: number) => void): ExternalBlob;
+}
 export interface Player {
     id: bigint;
     status: string;
-    image_url: string;
+    soldTo?: bigint;
     name: string;
-    base_price: bigint;
-    sold_to?: bigint;
+    soldPrice?: bigint;
+    imageUrl: string;
     category: string;
     rating: bigint;
-    sold_price?: bigint;
-}
-export interface Dashboard {
-    total_spent: bigint;
-    remaining_players: bigint;
-    most_expensive_player?: Player;
-    sold_players: bigint;
-}
-export interface AuctionState {
-    current_player_id?: bigint;
-    current_bid: bigint;
-    leading_team_id?: bigint;
-    is_active: boolean;
+    basePrice: bigint;
 }
 export type Result = {
     __kind__: "ok";
@@ -37,15 +32,32 @@ export type Result = {
     __kind__: "err";
     err: string;
 };
+export interface PlayerWithTeam {
+    player: Player;
+    team?: Team;
+}
+export interface Dashboard {
+    remainingPlayers: bigint;
+    totalSpent: bigint;
+    mostExpensivePlayer?: Player;
+    soldPlayers: bigint;
+}
+export interface AuctionState {
+    currentPlayerId?: bigint;
+    leadingTeamId?: bigint;
+    isActive: boolean;
+    currentBid: bigint;
+}
 export interface Team {
     id: bigint;
+    purseAmountLeft: bigint;
+    teamIconPlayer: string;
+    teamLogo?: ExternalBlob;
+    isTeamLocked: boolean;
+    ownerName: string;
     name: string;
-    purse_total: bigint;
-    icon_player_name: string;
-    purse_remaining: bigint;
-    players_bought: bigint;
-    owner_name: string;
-    is_locked: boolean;
+    purseAmountTotal: bigint;
+    numberOfPlayers: bigint;
 }
 export interface backendInterface {
     addPlayer(name: string, category: string, basePrice: bigint, imageUrl: string, rating: bigint): Promise<Result>;
@@ -54,8 +66,12 @@ export interface backendInterface {
     editTeamPurse(teamId: bigint, newPurse: bigint): Promise<Result>;
     getAuctionState(): Promise<AuctionState>;
     getDashboard(): Promise<Dashboard>;
+    getPlayerById(playerId: bigint): Promise<Player | null>;
     getPlayers(): Promise<Array<Player>>;
-    getResults(): Promise<Array<[Player, Team | null]>>;
+    getPlayersByCategory(category: string): Promise<Array<Player>>;
+    getRemainingPurse(teamId: bigint): Promise<bigint | null>;
+    getResults(): Promise<Array<PlayerWithTeam>>;
+    getTeamById(teamId: bigint): Promise<Team | null>;
     getTeams(): Promise<Array<Team>>;
     placeBid(teamId: bigint): Promise<Result>;
     resetAuction(): Promise<void>;
@@ -63,4 +79,5 @@ export interface backendInterface {
     sellPlayer(): Promise<Result>;
     updatePlayer(playerId: bigint, name: string, category: string, basePrice: bigint, imageUrl: string, rating: bigint): Promise<Result>;
     updateTeam(teamId: bigint, name: string, ownerName: string, iconPlayerName: string): Promise<Result>;
+    uploadTeamLogo(teamId: bigint, blob: ExternalBlob): Promise<Result>;
 }

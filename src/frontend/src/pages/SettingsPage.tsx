@@ -25,131 +25,26 @@ import { toast } from "sonner";
 import type { Player, Team } from "../backend.d";
 import { useActor } from "../hooks/useActor";
 import { useImageUpload } from "../hooks/useImageUpload";
+import {
+  DEFAULT_LIVE_LAYOUT,
+  LEAGUE_KEY,
+  LIVE_LAYOUT_KEY,
+  type LeagueSettings,
+  type LiveLayoutConfig,
+  TEAM_LOGOS_KEY,
+  getLeagueSettings,
+  getLiveLayout,
+  getTeamLogos,
+  saveLeagueSettings,
+  saveTeamLogos,
+} from "./LandingPage";
 
-// ─── League Settings localStorage helpers ────────────────────────────────────
+// ─── Re-export for backward compat ────────────────────────────────────────────
+export { getLeagueSettings as getLeagueConfig, getLiveLayout, getTeamLogos };
+export type { LeagueSettings as LeagueConfig, LiveLayoutConfig };
+export { LIVE_LAYOUT_KEY, DEFAULT_LIVE_LAYOUT };
 
-export interface LeagueConfig {
-  shortName: string;
-  fullName: string;
-  logoUrl: string;
-  logoSize: number; // percentage 50–200, default 100
-  shortNameSize: number; // percentage 50–200, default 100
-  fullNameSize: number; // percentage 50–200, default 100
-}
-
-const LEAGUE_SETTINGS_KEY = "spl_league_settings";
-const TEAM_LOGOS_KEY = "spl_team_logos";
-
-export function getLeagueConfig(): LeagueConfig {
-  try {
-    const raw = localStorage.getItem(LEAGUE_SETTINGS_KEY);
-    if (raw) {
-      return {
-        shortName: "SPL",
-        fullName: "Siddhivinayak Premier League",
-        logoUrl: "",
-        logoSize: 100,
-        shortNameSize: 100,
-        fullNameSize: 100,
-        ...(JSON.parse(raw) as Partial<LeagueConfig>),
-      };
-    }
-  } catch {
-    // fall through
-  }
-  return {
-    shortName: "SPL",
-    fullName: "Siddhivinayak Premier League",
-    logoUrl: "",
-    logoSize: 100,
-    shortNameSize: 100,
-    fullNameSize: 100,
-  };
-}
-
-// ─── Live Layout Config ───────────────────────────────────────────────────────
-
-export interface LiveLayoutConfig {
-  playerImageWidth: number;
-  playerImageHeight: number;
-  playerNameSize: number;
-  categoryBadgeSize: number;
-  bidCounterSize: number;
-  leadingTeamSize: number;
-  rightPanelWidth: number;
-  teamTableFontSize: number;
-  chartHeight: number;
-  headerLogoSize: number;
-}
-
-export const LIVE_LAYOUT_KEY = "spl_live_layout";
-
-export const DEFAULT_LIVE_LAYOUT: LiveLayoutConfig = {
-  playerImageWidth: 208,
-  playerImageHeight: 256,
-  playerNameSize: 100,
-  categoryBadgeSize: 100,
-  bidCounterSize: 100,
-  leadingTeamSize: 100,
-  rightPanelWidth: 384,
-  teamTableFontSize: 100,
-  chartHeight: 200,
-  headerLogoSize: 36,
-};
-
-export function getLiveLayout(): LiveLayoutConfig {
-  try {
-    const raw = localStorage.getItem(LIVE_LAYOUT_KEY);
-    if (raw) return { ...DEFAULT_LIVE_LAYOUT, ...JSON.parse(raw) };
-  } catch {
-    // fall through
-  }
-  return { ...DEFAULT_LIVE_LAYOUT };
-}
-
-function saveLeagueConfig(config: LeagueConfig) {
-  localStorage.setItem(LEAGUE_SETTINGS_KEY, JSON.stringify(config));
-}
-
-export function getTeamLogos(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(TEAM_LOGOS_KEY);
-    if (raw) return JSON.parse(raw) as Record<string, string>;
-  } catch {
-    // fall through
-  }
-  return {};
-}
-
-function saveTeamLogos(logos: Record<string, string>) {
-  localStorage.setItem(TEAM_LOGOS_KEY, JSON.stringify(logos));
-}
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-interface TeamEditState {
-  name: string;
-  ownerName: string;
-  iconPlayerName: string;
-  purse: string;
-  logoUrl: string;
-  isDirty: boolean;
-  isSaving: boolean;
-}
-
-interface PlayerEditState {
-  name: string;
-  category: string;
-  basePrice: string;
-  imageUrl: string;
-  rating: string;
-  isDirty: boolean;
-  isSaving: boolean;
-  isExpanded: boolean;
-}
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 const CATEGORY_COLORS: Record<string, string> = {
   Batsman: "oklch(0.7 0.15 140)",
   Bowler: "oklch(0.65 0.18 25)",
@@ -160,10 +55,10 @@ function CategoryBadge({ category }: { category: string }) {
   const color = CATEGORY_COLORS[category] ?? "oklch(0.55 0.02 90)";
   return (
     <span
-      className="text-xs font-broadcast tracking-widest px-2 py-0.5"
+      className="text-xs font-broadcast tracking-widest px-2 py-0.5 flex-shrink-0"
       style={{
         background: `${color}22`,
-        border: `1px solid ${color}66`,
+        border: `1px solid ${color}55`,
         color,
       }}
     >
@@ -180,7 +75,7 @@ function StarRating({ value }: { value: number }) {
           key={i}
           size={10}
           style={{
-            color: i <= value ? "oklch(0.78 0.165 85)" : "oklch(0.25 0.03 265)",
+            color: i <= value ? "oklch(0.78 0.165 85)" : "oklch(0.25 0.03 255)",
             fill: i <= value ? "oklch(0.78 0.165 85)" : "transparent",
           }}
         />
@@ -189,27 +84,25 @@ function StarRating({ value }: { value: number }) {
   );
 }
 
-// Inline field style
 const fieldStyle: React.CSSProperties = {
-  background: "oklch(0.08 0.025 265)",
-  border: "1px solid oklch(0.22 0.04 265)",
-  color: "oklch(0.96 0.015 90)",
+  background: "oklch(0.09 0.025 255)",
+  border: "1px solid oklch(0.25 0.03 255)",
+  color: "oklch(0.96 0.01 90)",
   outline: "none",
 };
 
 const fieldFocusClass =
   "focus:ring-1 focus:ring-[oklch(0.78_0.165_85/0.4)] transition-shadow";
 
-// ─── League Tab ───────────────────────────────────────────────────────────────
-
+// ─── League Tab ────────────────────────────────────────────────────────────────
 function LeagueTab() {
-  const [config, setConfig] = useState<LeagueConfig>(getLeagueConfig);
+  const [config, setConfig] = useState<LeagueSettings>(getLeagueSettings);
   const [isSaving, setIsSaving] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { uploadImage, isUploading, progress } = useImageUpload();
 
-  const update = (key: keyof LeagueConfig, val: string | number) => {
+  const update = (key: keyof LeagueSettings, val: string | number) => {
     setConfig((prev) => ({ ...prev, [key]: val }));
     setIsDirty(true);
   };
@@ -230,40 +123,37 @@ function LeagueTab() {
 
   const handleSave = () => {
     setIsSaving(true);
-    saveLeagueConfig(config);
+    saveLeagueSettings(config);
     setTimeout(() => {
       setIsSaving(false);
       setIsDirty(false);
-      toast.success(
-        "League settings saved — refresh the main pages to see changes",
-      );
+      toast.success("League settings saved — refresh main pages to apply");
     }, 300);
   };
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-5 max-w-2xl">
       <div
-        className="px-1 flex items-center gap-2 text-xs"
-        style={{ color: "oklch(0.45 0.02 90)" }}
+        className="flex items-center gap-2 text-xs"
+        style={{ color: "oklch(0.42 0.02 90)" }}
       >
         <Trophy size={12} />
         <span>Configure league name and logo displayed across all screens</span>
       </div>
 
-      {/* League details */}
       <div
-        className="p-5 space-y-4"
+        className="p-5 space-y-5"
         style={{
-          background: "oklch(0.11 0.03 265)",
+          background: "oklch(0.12 0.025 255)",
           border: isDirty
             ? "1px solid oklch(0.78 0.165 85 / 0.4)"
-            : "1px solid oklch(0.22 0.04 265)",
+            : "1px solid oklch(0.25 0.03 255)",
           transition: "border-color 0.2s ease",
         }}
       >
         <div
-          className="pb-3 mb-1"
-          style={{ borderBottom: "1px solid oklch(0.16 0.035 265)" }}
+          className="pb-3"
+          style={{ borderBottom: "1px solid oklch(0.18 0.025 255)" }}
         >
           <span
             className="font-broadcast text-xs tracking-widest"
@@ -278,9 +168,9 @@ function LeagueTab() {
             <label
               htmlFor="league-short-name"
               className="block text-xs font-broadcast tracking-widest mb-1.5"
-              style={{ color: "oklch(0.45 0.02 90)" }}
+              style={{ color: "oklch(0.42 0.02 90)" }}
             >
-              LEAGUE SHORT NAME (e.g. SPL)
+              SHORT NAME (e.g. SPL)
             </label>
             <input
               id="league-short-name"
@@ -296,7 +186,7 @@ function LeagueTab() {
             <label
               htmlFor="league-full-name"
               className="block text-xs font-broadcast tracking-widest mb-1.5"
-              style={{ color: "oklch(0.45 0.02 90)" }}
+              style={{ color: "oklch(0.42 0.02 90)" }}
             >
               FULL LEAGUE NAME
             </label>
@@ -305,7 +195,7 @@ function LeagueTab() {
               type="text"
               value={config.fullName}
               onChange={(e) => update("fullName", e.target.value)}
-              placeholder="Siddhivinayak Premier League"
+              placeholder="Siddhivinayak Premier League 2026"
               className={`w-full px-3 py-2 text-sm ${fieldFocusClass}`}
               style={fieldStyle}
             />
@@ -315,27 +205,25 @@ function LeagueTab() {
         {/* Logo upload */}
         <div>
           <p
-            className="block text-xs font-broadcast tracking-widest mb-3"
-            style={{ color: "oklch(0.45 0.02 90)" }}
+            className="text-xs font-broadcast tracking-widest mb-3"
+            style={{ color: "oklch(0.42 0.02 90)" }}
           >
-            LEAGUE LOGO (displays free-form, no clipping)
+            LEAGUE LOGO (free-form, no clipping)
           </p>
-
           <div className="flex gap-4 items-start">
-            {/* Preview area — free-form, no circle clip */}
             <div
               className="flex-shrink-0 flex items-center justify-center overflow-hidden"
               style={{
-                width: "120px",
-                height: "120px",
-                background: "oklch(0.085 0.025 265)",
-                border: "1px solid oklch(0.22 0.04 265)",
+                width: "100px",
+                height: "100px",
+                background: "oklch(0.09 0.025 255)",
+                border: "1px solid oklch(0.25 0.03 255)",
               }}
             >
               {config.logoUrl ? (
                 <img
                   src={config.logoUrl}
-                  alt="League logo preview"
+                  alt="League logo"
                   className="w-full h-full object-contain"
                   onError={(e) => {
                     (e.target as HTMLImageElement).style.display = "none";
@@ -343,26 +231,24 @@ function LeagueTab() {
                 />
               ) : (
                 <div className="flex flex-col items-center gap-2">
-                  <Trophy size={28} style={{ color: "oklch(0.35 0.02 90)" }} />
+                  <Trophy size={24} style={{ color: "oklch(0.32 0.02 90)" }} />
                   <span
-                    className="text-xs text-center"
-                    style={{ color: "oklch(0.35 0.02 90)" }}
+                    className="text-xs"
+                    style={{ color: "oklch(0.32 0.02 90)" }}
                   >
                     No logo
                   </span>
                 </div>
               )}
             </div>
-
             <div className="flex-1 space-y-3">
-              {/* URL input */}
               <div>
                 <label
                   htmlFor="league-logo-url"
                   className="block text-xs font-broadcast tracking-widest mb-1.5"
                   style={{ color: "oklch(0.38 0.02 90)" }}
                 >
-                  LOGO URL (or upload below)
+                  LOGO URL (or upload)
                 </label>
                 <input
                   id="league-logo-url"
@@ -376,8 +262,6 @@ function LeagueTab() {
                   style={{ ...fieldStyle, fontFamily: "inherit" }}
                 />
               </div>
-
-              {/* Upload button */}
               <input
                 ref={fileInputRef}
                 type="file"
@@ -389,11 +273,9 @@ function LeagueTab() {
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isUploading}
-                className="flex items-center gap-2 px-4 py-2.5 text-xs font-broadcast tracking-wider transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                className="flex items-center gap-2 px-4 py-2 text-xs font-broadcast tracking-wider transition-all disabled:opacity-60"
                 style={{
-                  background: isUploading
-                    ? "oklch(0.14 0.04 265)"
-                    : "oklch(0.12 0.03 265)",
+                  background: "oklch(0.12 0.03 255)",
                   border: "1px solid oklch(0.78 0.165 85 / 0.35)",
                   color: "oklch(0.78 0.165 85)",
                 }}
@@ -406,19 +288,17 @@ function LeagueTab() {
                 ) : (
                   <>
                     <Upload size={12} />
-                    UPLOAD LOGO FROM DEVICE
+                    UPLOAD LOGO
                   </>
                 )}
               </button>
-
-              {/* Progress bar */}
               {isUploading && (
                 <div
                   className="h-0.5 overflow-hidden"
-                  style={{ background: "oklch(0.22 0.04 265)" }}
+                  style={{ background: "oklch(0.25 0.03 255)" }}
                 >
                   <div
-                    className="h-full transition-all duration-200"
+                    className="h-full transition-all"
                     style={{
                       width: `${progress}%`,
                       background:
@@ -427,63 +307,36 @@ function LeagueTab() {
                   />
                 </div>
               )}
-
-              <p className="text-xs" style={{ color: "oklch(0.38 0.02 90)" }}>
-                Logo is displayed without any shape clipping (free-form).
-                Recommended: transparent background PNG.
-              </p>
             </div>
           </div>
         </div>
 
-        {/* Size Controls */}
+        {/* Size controls */}
         <div
-          className="pt-4"
-          style={{ borderTop: "1px solid oklch(0.16 0.035 265)" }}
+          className="pt-4 space-y-4"
+          style={{ borderTop: "1px solid oklch(0.18 0.025 255)" }}
         >
-          <div className="mb-3">
-            <span
-              className="font-broadcast text-xs tracking-widest"
-              style={{ color: "oklch(0.78 0.165 85)" }}
-            >
-              SIZE CONTROLS
-            </span>
-            <p
-              className="text-xs mt-1"
-              style={{ color: "oklch(0.38 0.02 90)" }}
-            >
-              Adjust sizes of logo and text displayed on all screens
-            </p>
-          </div>
-          <div className="space-y-4">
-            {(
-              [
-                {
-                  key: "logoSize" as const,
-                  label: "LOGO SIZE",
-                  min: 50,
-                  max: 200,
-                },
-                {
-                  key: "shortNameSize" as const,
-                  label: "SHORT NAME SIZE",
-                  min: 50,
-                  max: 200,
-                },
-                {
-                  key: "fullNameSize" as const,
-                  label: "FULL NAME SIZE",
-                  min: 50,
-                  max: 200,
-                },
-              ] as const
-            ).map(({ key, label, min, max }) => (
+          <span
+            className="font-broadcast text-xs tracking-widest"
+            style={{ color: "oklch(0.78 0.165 85)" }}
+          >
+            SIZE CONTROLS
+          </span>
+          {(
+            [
+              { key: "logoSize" as const, label: "LOGO SIZE" },
+              { key: "nameSize" as const, label: "NAME SIZE" },
+            ] as const
+          ).map(({ key, label }) => {
+            const val = config[key];
+            const pct = ((val - 50) / 150) * 100;
+            return (
               <div key={key}>
-                <div className="flex items-center justify-between mb-1.5">
+                <div className="flex items-center justify-between mb-1">
                   <label
-                    htmlFor={`league-size-${key}`}
+                    htmlFor={`league-${key}`}
                     className="text-xs font-broadcast tracking-widest"
-                    style={{ color: "oklch(0.45 0.02 90)" }}
+                    style={{ color: "oklch(0.42 0.02 90)" }}
                   >
                     {label}
                   </label>
@@ -491,51 +344,43 @@ function LeagueTab() {
                     className="font-digital text-sm"
                     style={{ color: "oklch(0.78 0.165 85)" }}
                   >
-                    {config[key]}%
+                    {val}%
                   </span>
                 </div>
                 <input
-                  id={`league-size-${key}`}
+                  id={`league-${key}`}
                   type="range"
-                  min={min}
-                  max={max}
+                  min={50}
+                  max={200}
                   step={5}
-                  value={config[key]}
+                  value={val}
                   onChange={(e) => update(key, Number(e.target.value))}
-                  className="w-full h-1.5 appearance-none cursor-pointer rounded-full"
+                  className="w-full h-1.5 appearance-none cursor-pointer"
                   style={{
-                    background: `linear-gradient(to right, oklch(0.78 0.165 85) 0%, oklch(0.78 0.165 85) ${((config[key] - min) / (max - min)) * 100}%, oklch(0.22 0.04 265) ${((config[key] - min) / (max - min)) * 100}%, oklch(0.22 0.04 265) 100%)`,
-                    accentColor: "oklch(0.78 0.165 85)",
+                    background: `linear-gradient(to right, oklch(0.78 0.165 85) 0%, oklch(0.78 0.165 85) ${pct}%, oklch(0.25 0.03 255) ${pct}%, oklch(0.25 0.03 255) 100%)`,
                   }}
                 />
-                <div
-                  className="flex justify-between text-xs mt-0.5"
-                  style={{ color: "oklch(0.3 0.02 90)" }}
-                >
-                  <span>{min}%</span>
-                  <span>{max}%</span>
-                </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
 
         {/* Save */}
         <div
           className="pt-3 flex justify-end"
-          style={{ borderTop: "1px solid oklch(0.16 0.035 265)" }}
+          style={{ borderTop: "1px solid oklch(0.18 0.025 255)" }}
         >
           <button
             type="button"
             onClick={handleSave}
             disabled={isSaving || !isDirty}
-            className="flex items-center gap-2 px-5 py-2.5 text-sm font-broadcast tracking-wider transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-5 py-2.5 text-sm font-broadcast tracking-wider hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
             style={{
               background: isDirty
                 ? "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))"
-                : "oklch(0.14 0.04 265)",
-              color: isDirty ? "oklch(0.08 0.025 265)" : "oklch(0.45 0.02 90)",
-              border: isDirty ? "none" : "1px solid oklch(0.22 0.04 265)",
+                : "oklch(0.16 0.03 255)",
+              color: isDirty ? "oklch(0.08 0.025 265)" : "oklch(0.42 0.02 90)",
+              border: isDirty ? "none" : "1px solid oklch(0.25 0.03 255)",
             }}
           >
             {isSaving ? (
@@ -551,8 +396,7 @@ function LeagueTab() {
   );
 }
 
-// ─── Live Layout Slider ───────────────────────────────────────────────────────
-
+// ─── Layout Slider Component ───────────────────────────────────────────────────
 function LayoutSlider({
   id,
   label,
@@ -579,7 +423,7 @@ function LayoutSlider({
         <label
           htmlFor={id}
           className="text-xs font-broadcast tracking-widest"
-          style={{ color: "oklch(0.45 0.02 90)" }}
+          style={{ color: "oklch(0.42 0.02 90)" }}
         >
           {label}
         </label>
@@ -599,15 +443,14 @@ function LayoutSlider({
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full h-1.5 appearance-none cursor-pointer rounded-full"
+        className="w-full h-1.5 appearance-none cursor-pointer"
         style={{
-          background: `linear-gradient(to right, oklch(0.78 0.165 85) 0%, oklch(0.78 0.165 85) ${pct}%, oklch(0.22 0.04 265) ${pct}%, oklch(0.22 0.04 265) 100%)`,
-          accentColor: "oklch(0.78 0.165 85)",
+          background: `linear-gradient(to right, oklch(0.78 0.165 85) 0%, oklch(0.78 0.165 85) ${pct}%, oklch(0.25 0.03 255) ${pct}%, oklch(0.25 0.03 255) 100%)`,
         }}
       />
       <div
         className="flex justify-between text-xs mt-0.5"
-        style={{ color: "oklch(0.3 0.02 90)" }}
+        style={{ color: "oklch(0.28 0.02 90)" }}
       >
         <span>
           {min}
@@ -622,8 +465,7 @@ function LayoutSlider({
   );
 }
 
-// ─── Live Layout Tab ──────────────────────────────────────────────────────────
-
+// ─── Live Layout Tab ───────────────────────────────────────────────────────────
 function LiveLayoutTab() {
   const [layout, setLayout] = useState<LiveLayoutConfig>(getLiveLayout);
   const [isSaved, setIsSaved] = useState(false);
@@ -636,9 +478,7 @@ function LiveLayoutTab() {
   const handleSave = () => {
     localStorage.setItem(LIVE_LAYOUT_KEY, JSON.stringify(layout));
     setIsSaved(true);
-    toast.success("Live layout saved — refresh /live to apply", {
-      description: "Open the Live screen to see the updated layout.",
-    });
+    toast.success("Live layout saved — refresh /live to apply");
   };
 
   const handleReset = () => {
@@ -647,9 +487,7 @@ function LiveLayoutTab() {
     toast.info("Reset to default layout");
   };
 
-  // Preview scale: We'll show at 45% scale
-  const SCALE = 0.45;
-  // Full preview container size (the unscaled mock)
+  const SCALE = 0.42;
   const MOCK_W = 1100;
   const MOCK_H = 620;
 
@@ -683,7 +521,7 @@ function LiveLayoutTab() {
         },
         {
           key: "categoryBadgeSize" as const,
-          label: "CATEGORY BADGE SIZE",
+          label: "CATEGORY BADGE",
           min: 50,
           max: 200,
           step: 5,
@@ -759,31 +597,27 @@ function LiveLayoutTab() {
   return (
     <div className="space-y-4">
       <div
-        className="px-1 flex items-center gap-2 text-xs"
-        style={{ color: "oklch(0.45 0.02 90)" }}
+        className="flex items-center gap-2 text-xs"
+        style={{ color: "oklch(0.42 0.02 90)" }}
       >
         <Monitor size={12} />
-        <span>
-          Adjust sizes of elements on the live broadcast screen. Changes preview
-          instantly.
-        </span>
+        <span>Adjust sizes of elements on the live broadcast screen.</span>
       </div>
 
       <div className="flex flex-col xl:flex-row gap-4">
-        {/* ── Settings Panel (left) ── */}
+        {/* Controls */}
         <div
-          className="xl:w-[380px] flex-shrink-0 space-y-4"
+          className="xl:w-[360px] flex-shrink-0 space-y-0"
           style={{
-            background: "oklch(0.11 0.03 265)",
-            border: "1px solid oklch(0.22 0.04 265)",
+            background: "oklch(0.12 0.025 255)",
+            border: "1px solid oklch(0.25 0.03 255)",
           }}
         >
-          {/* Sticky action row */}
           <div
             className="sticky top-0 z-10 flex items-center justify-between px-4 py-3"
             style={{
-              background: "oklch(0.11 0.03 265)",
-              borderBottom: "1px solid oklch(0.16 0.035 265)",
+              background: "oklch(0.12 0.025 255)",
+              borderBottom: "1px solid oklch(0.18 0.025 255)",
             }}
           >
             <span
@@ -796,11 +630,11 @@ function LiveLayoutTab() {
               <button
                 type="button"
                 onClick={handleReset}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-broadcast tracking-wider transition-all hover:opacity-80"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-broadcast tracking-wider hover:opacity-80"
                 style={{
-                  background: "oklch(0.14 0.04 265)",
-                  border: "1px solid oklch(0.22 0.04 265)",
-                  color: "oklch(0.55 0.02 90)",
+                  background: "oklch(0.16 0.03 255)",
+                  border: "1px solid oklch(0.25 0.03 255)",
+                  color: "oklch(0.52 0.02 90)",
                 }}
               >
                 <RotateCcw size={11} />
@@ -809,7 +643,7 @@ function LiveLayoutTab() {
               <button
                 type="button"
                 onClick={handleSave}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-broadcast tracking-wider transition-all hover:opacity-90"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-broadcast tracking-wider hover:opacity-90"
                 style={{
                   background: isSaved
                     ? "oklch(0.7 0.15 140 / 0.2)"
@@ -823,17 +657,17 @@ function LiveLayoutTab() {
                 }}
               >
                 <Save size={11} />
-                {isSaved ? "SAVED" : "SAVE LAYOUT"}
+                {isSaved ? "SAVED ✓" : "SAVE LAYOUT"}
               </button>
             </div>
           </div>
 
-          <div className="px-4 pb-4 space-y-5">
+          <div className="px-4 py-4 space-y-5">
             {sliderSections.map((section) => (
               <div key={section.title}>
                 <div
                   className="pb-2 mb-3"
-                  style={{ borderBottom: "1px solid oklch(0.16 0.035 265)" }}
+                  style={{ borderBottom: "1px solid oklch(0.18 0.025 255)" }}
                 >
                   <span
                     className="font-broadcast text-xs tracking-widest"
@@ -846,7 +680,7 @@ function LiveLayoutTab() {
                   {section.sliders.map((s) => (
                     <LayoutSlider
                       key={s.key}
-                      id={`layout-slider-${s.key}`}
+                      id={`layout-${s.key}`}
                       label={s.label}
                       value={layout[s.key]}
                       min={s.min}
@@ -862,15 +696,15 @@ function LiveLayoutTab() {
           </div>
         </div>
 
-        {/* ── Live Preview (right) ── */}
+        {/* Preview */}
         <div className="flex-1 min-w-0">
           <div
-            className="mb-2 flex items-center gap-2 px-1"
-            style={{ color: "oklch(0.45 0.02 90)" }}
+            className="mb-2 flex items-center gap-2"
+            style={{ color: "oklch(0.42 0.02 90)" }}
           >
             <Monitor size={12} />
             <span className="text-xs font-broadcast tracking-wider">
-              LIVE PREVIEW (scaled)
+              LIVE PREVIEW (scaled {Math.round(SCALE * 100)}%)
             </span>
           </div>
           <div
@@ -878,18 +712,17 @@ function LiveLayoutTab() {
             style={{
               width: "100%",
               height: `${MOCK_H * SCALE}px`,
-              background: "oklch(0.07 0.025 265)",
-              border: "1px solid oklch(0.22 0.04 265)",
+              background: "oklch(0.08 0.025 255)",
+              border: "1px solid oklch(0.25 0.03 255)",
             }}
           >
-            {/* The mock — rendered at full size, then scaled */}
             <div
               style={{
                 width: `${MOCK_W}px`,
                 height: `${MOCK_H}px`,
                 transform: `scale(${SCALE})`,
                 transformOrigin: "top left",
-                background: "oklch(0.07 0.025 265)",
+                background: "oklch(0.08 0.025 255)",
                 position: "absolute",
                 top: 0,
                 left: 0,
@@ -904,22 +737,21 @@ function LiveLayoutTab() {
                   justifyContent: "space-between",
                   padding: "0 24px",
                   height: "52px",
-                  background: "oklch(0.09 0.03 265 / 0.95)",
+                  background: "oklch(0.1 0.025 255 / 0.96)",
                   borderBottom: "1px solid oklch(0.78 0.165 85 / 0.25)",
                 }}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  {/* Logo placeholder */}
                   <div
                     style={{
                       width: layout.headerLogoSize,
                       height: layout.headerLogoSize,
-                      background: "oklch(0.78 0.165 85 / 0.2)",
+                      background: "oklch(0.78 0.165 85 / 0.18)",
                       border: "1px solid oklch(0.78 0.165 85 / 0.4)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      fontSize: Math.max(8, layout.headerLogoSize * 0.35),
+                      fontSize: Math.max(8, layout.headerLogoSize * 0.38),
                       fontFamily: "monospace",
                       color: "oklch(0.78 0.165 85)",
                       flexShrink: 0,
@@ -941,11 +773,11 @@ function LiveLayoutTab() {
                     <div
                       style={{
                         fontSize: 10,
-                        color: "oklch(0.45 0.02 90)",
+                        color: "oklch(0.42 0.02 90)",
                         letterSpacing: "0.08em",
                       }}
                     >
-                      SIDDHIVINAYAK PREMIER LEAGUE
+                      SIDDHIVINAYAK PREMIER LEAGUE 2026
                     </div>
                   </div>
                 </div>
@@ -960,18 +792,13 @@ function LiveLayoutTab() {
                     letterSpacing: "0.1em",
                   }}
                 >
-                  PLAYER AUCTION 2025
+                  PLAYER AUCTION 2026
                 </div>
               </div>
 
-              {/* Mock main content */}
-              <div
-                style={{
-                  display: "flex",
-                  height: `${MOCK_H - 52}px`,
-                }}
-              >
-                {/* Center player section */}
+              {/* Mock main */}
+              <div style={{ display: "flex", height: `${MOCK_H - 52}px` }}>
+                {/* Center */}
                 <div
                   style={{
                     flex: 1,
@@ -980,15 +807,14 @@ function LiveLayoutTab() {
                     alignItems: "center",
                     justifyContent: "center",
                     padding: "16px",
-                    gap: 12,
+                    gap: 10,
                   }}
                 >
-                  {/* Player image placeholder */}
                   <div
                     style={{
                       width: layout.playerImageWidth,
                       height: layout.playerImageHeight,
-                      background: "oklch(0.15 0.04 265)",
+                      background: "oklch(0.16 0.04 255)",
                       border: "2px solid oklch(0.78 0.165 85 / 0.6)",
                       display: "flex",
                       alignItems: "center",
@@ -996,31 +822,26 @@ function LiveLayoutTab() {
                       flexShrink: 0,
                     }}
                   >
-                    <div
+                    <span
                       style={{
                         color: "oklch(0.35 0.02 90)",
                         fontSize: 13,
                         fontFamily: "monospace",
                       }}
                     >
-                      PLAYER PHOTO
-                    </div>
+                      PHOTO
+                    </span>
                   </div>
-
-                  {/* Player name */}
                   <div
                     style={{
                       fontSize: 32 * (layout.playerNameSize / 100),
                       fontFamily: "monospace",
                       color: "oklch(0.97 0.01 90)",
                       fontWeight: 700,
-                      letterSpacing: "-0.01em",
                     }}
                   >
                     Virat Kohli
                   </div>
-
-                  {/* Category badge */}
                   <div
                     style={{
                       fontSize: 12 * (layout.categoryBadgeSize / 100),
@@ -1034,22 +855,20 @@ function LiveLayoutTab() {
                   >
                     BATSMAN
                   </div>
-
-                  {/* Bid counter */}
                   <div
                     style={{
-                      background: "oklch(0.065 0.025 265)",
+                      background: "oklch(0.07 0.025 255)",
                       border: "1px solid oklch(0.78 0.165 85 / 0.2)",
-                      padding: "12px 20px",
+                      padding: "10px 18px",
                       textAlign: "center",
-                      minWidth: 220,
+                      minWidth: 200,
                     }}
                   >
                     <div
                       style={{
                         fontSize: 8,
                         fontFamily: "monospace",
-                        color: "oklch(0.38 0.02 90)",
+                        color: "oklch(0.35 0.02 90)",
                         letterSpacing: "0.15em",
                         marginBottom: 4,
                       }}
@@ -1074,10 +893,9 @@ function LiveLayoutTab() {
                         color: "oklch(0.85 0.165 85)",
                         letterSpacing: "0.06em",
                         marginTop: 6,
-                        fontWeight: 600,
                       }}
                     >
-                      ▸ LEADING: MUMBAI WARRIORS
+                      ▸ MUMBAI WARRIORS
                     </div>
                   </div>
                 </div>
@@ -1087,18 +905,17 @@ function LiveLayoutTab() {
                   style={{
                     width: layout.rightPanelWidth,
                     flexShrink: 0,
-                    background: "oklch(0.085 0.025 265)",
+                    background: "oklch(0.09 0.025 255)",
                     borderLeft: "1px solid oklch(0.78 0.165 85 / 0.18)",
                     display: "flex",
                     flexDirection: "column",
                     overflow: "hidden",
                   }}
                 >
-                  {/* Table header */}
                   <div
                     style={{
                       padding: "8px 12px",
-                      borderBottom: "1px solid oklch(0.16 0.035 265)",
+                      borderBottom: "1px solid oklch(0.16 0.03 255)",
                       fontSize: 9,
                       fontFamily: "monospace",
                       color: "oklch(0.78 0.165 85)",
@@ -1107,8 +924,6 @@ function LiveLayoutTab() {
                   >
                     TEAM PURSE
                   </div>
-
-                  {/* Mock table rows */}
                   <div style={{ flex: 1, overflow: "hidden" }}>
                     {[
                       { name: "Mumbai Warriors", purse: "19,200", slots: 5 },
@@ -1118,7 +933,6 @@ function LiveLayoutTab() {
                       { name: "Kolkata KR", purse: "12,100", slots: 5 },
                       { name: "Punjab Kings", purse: "18,900", slots: 7 },
                       { name: "Hyderabad", purse: "16,400", slots: 4 },
-                      { name: "Jaipur Royals", purse: "14,700", slots: 6 },
                     ].map((row, i) => (
                       <div
                         key={row.name}
@@ -1128,7 +942,7 @@ function LiveLayoutTab() {
                           padding: "4px 12px",
                           fontSize: 10 * (layout.teamTableFontSize / 100),
                           fontFamily: "monospace",
-                          borderBottom: "1px solid oklch(0.12 0.025 265)",
+                          borderBottom: "1px solid oklch(0.12 0.025 255)",
                           background:
                             i === 0
                               ? "oklch(0.78 0.165 85 / 0.07)"
@@ -1136,7 +950,7 @@ function LiveLayoutTab() {
                           color:
                             i === 0
                               ? "oklch(0.88 0.14 87)"
-                              : "oklch(0.65 0.02 90)",
+                              : "oklch(0.62 0.02 90)",
                         }}
                       >
                         <span
@@ -1156,13 +970,11 @@ function LiveLayoutTab() {
                       </div>
                     ))}
                   </div>
-
-                  {/* Mock chart */}
                   <div
                     style={{
                       height: layout.chartHeight,
                       padding: "8px 12px",
-                      borderTop: "1px solid oklch(0.16 0.035 265)",
+                      borderTop: "1px solid oklch(0.16 0.03 255)",
                       display: "flex",
                       flexDirection: "column",
                       gap: 4,
@@ -1180,7 +992,7 @@ function LiveLayoutTab() {
                     >
                       PURSE REMAINING
                     </div>
-                    {[85, 70, 65, 60, 55, 80, 72, 66].map((pct, i) => (
+                    {[85, 70, 65, 60, 55, 80, 72].map((pct, i) => (
                       <div
                         // biome-ignore lint/suspicious/noArrayIndexKey: static mock data
                         key={i}
@@ -1199,7 +1011,7 @@ function LiveLayoutTab() {
                             background:
                               i === 0
                                 ? "oklch(0.78 0.165 85)"
-                                : "oklch(0.32 0.07 265)",
+                                : "oklch(0.3 0.07 255)",
                             borderRadius: "0 2px 2px 0",
                             minHeight: 4,
                             maxHeight: 14,
@@ -1212,12 +1024,12 @@ function LiveLayoutTab() {
               </div>
             </div>
           </div>
-          <p className="text-xs mt-2" style={{ color: "oklch(0.35 0.02 90)" }}>
+          <p className="text-xs mt-2" style={{ color: "oklch(0.32 0.02 90)" }}>
             Preview updates in real time. Click{" "}
             <strong style={{ color: "oklch(0.78 0.165 85)" }}>
               SAVE LAYOUT
             </strong>{" "}
-            to apply, then refresh the /live page.
+            then refresh /live to apply.
           </p>
         </div>
       </div>
@@ -1225,7 +1037,16 @@ function LiveLayoutTab() {
   );
 }
 
-// ─── Team Row ────────────────────────────────────────────────────────────────
+// ─── Team Row ──────────────────────────────────────────────────────────────────
+interface TeamEditState {
+  name: string;
+  ownerName: string;
+  iconPlayerName: string;
+  purse: string;
+  logoUrl: string;
+  isDirty: boolean;
+  isSaving: boolean;
+}
 
 function TeamRow({
   team,
@@ -1242,13 +1063,13 @@ function TeamRow({
     },
   ) => Promise<void>;
 }) {
-  const originalPurse = Number(team.purse_remaining);
+  const originalPurse = Number(team.purseAmountLeft);
   const teamLogos = getTeamLogos();
 
   const [state, setState] = useState<TeamEditState>({
     name: team.name,
-    ownerName: team.owner_name,
-    iconPlayerName: team.icon_player_name,
+    ownerName: team.ownerName,
+    iconPlayerName: team.teamIconPlayer,
     purse: String(originalPurse),
     logoUrl: teamLogos[String(team.id)] ?? "",
     isDirty: false,
@@ -1304,40 +1125,35 @@ function TeamRow({
     setState((prev) => ({ ...prev, isSaving: false, isDirty: false }));
   };
 
-  const remainingSlots = 7 - Number(team.players_bought);
+  const remainingSlots = 7 - Number(team.numberOfPlayers);
 
   return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
+    <div
       className="relative"
       style={{
-        background: "oklch(0.11 0.03 265)",
+        background: "oklch(0.12 0.025 255)",
         border: state.isDirty
           ? "1px solid oklch(0.78 0.165 85 / 0.4)"
-          : "1px solid oklch(0.22 0.04 265)",
+          : "1px solid oklch(0.25 0.03 255)",
         transition: "border-color 0.2s ease",
       }}
     >
-      {/* Header bar */}
       <div
         className="flex items-center justify-between px-4 py-3"
-        style={{ borderBottom: "1px solid oklch(0.16 0.035 265)" }}
+        style={{ borderBottom: "1px solid oklch(0.18 0.025 255)" }}
       >
         <div className="flex items-center gap-3">
-          {/* Team logo preview (circle) */}
           <div
-            className="w-10 h-10 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden"
+            className="w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center overflow-hidden"
             style={{
-              background: "oklch(0.14 0.04 265)",
-              border: "1px solid oklch(0.22 0.04 265)",
+              background: "oklch(0.16 0.04 255)",
+              border: "1px solid oklch(0.25 0.03 255)",
             }}
           >
             {state.logoUrl ? (
               <img
                 src={state.logoUrl}
-                alt={`${team.name} logo`}
+                alt={team.name}
                 className="w-full h-full object-cover rounded-full"
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = "none";
@@ -1355,21 +1171,18 @@ function TeamRow({
           <div>
             <div
               className="font-broadcast text-sm tracking-wide"
-              style={{ color: "oklch(0.92 0.02 90)" }}
+              style={{ color: "oklch(0.9 0.02 90)" }}
             >
               {team.name}
             </div>
-            <div
-              className="text-xs mt-0.5"
-              style={{ color: "oklch(0.45 0.02 90)" }}
-            >
-              {Number(team.players_bought)}/7 bought · {remainingSlots} slots
+            <div className="text-xs" style={{ color: "oklch(0.42 0.02 90)" }}>
+              {Number(team.numberOfPlayers)}/7 bought · {remainingSlots} slots
               left
             </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {team.is_locked && (
+          {team.isTeamLocked && (
             <div
               className="flex items-center gap-1 text-xs px-2 py-0.5"
               style={{
@@ -1393,64 +1206,35 @@ function TeamRow({
         </div>
       </div>
 
-      {/* Fields */}
       <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <div>
-          <label
-            htmlFor={`team-name-${String(team.id)}`}
-            className="block text-xs font-broadcast tracking-widest mb-1.5"
-            style={{ color: "oklch(0.45 0.02 90)" }}
-          >
-            TEAM NAME
-          </label>
-          <input
-            id={`team-name-${String(team.id)}`}
-            type="text"
-            value={state.name}
-            onChange={(e) => update("name", e.target.value)}
-            className={`w-full px-3 py-2 text-sm ${fieldFocusClass}`}
-            style={fieldStyle}
-          />
-        </div>
-        <div>
-          <label
-            htmlFor={`team-owner-${String(team.id)}`}
-            className="block text-xs font-broadcast tracking-widest mb-1.5"
-            style={{ color: "oklch(0.45 0.02 90)" }}
-          >
-            OWNER NAME
-          </label>
-          <input
-            id={`team-owner-${String(team.id)}`}
-            type="text"
-            value={state.ownerName}
-            onChange={(e) => update("ownerName", e.target.value)}
-            className={`w-full px-3 py-2 text-sm ${fieldFocusClass}`}
-            style={fieldStyle}
-          />
-        </div>
-        <div>
-          <label
-            htmlFor={`team-icon-${String(team.id)}`}
-            className="block text-xs font-broadcast tracking-widest mb-1.5"
-            style={{ color: "oklch(0.45 0.02 90)" }}
-          >
-            ICON PLAYER
-          </label>
-          <input
-            id={`team-icon-${String(team.id)}`}
-            type="text"
-            value={state.iconPlayerName}
-            onChange={(e) => update("iconPlayerName", e.target.value)}
-            className={`w-full px-3 py-2 text-sm ${fieldFocusClass}`}
-            style={fieldStyle}
-          />
-        </div>
+        {[
+          { key: "name" as const, label: "TEAM NAME" },
+          { key: "ownerName" as const, label: "OWNER NAME" },
+          { key: "iconPlayerName" as const, label: "ICON PLAYER" },
+        ].map(({ key, label }) => (
+          <div key={key}>
+            <label
+              htmlFor={`team-${key}-${String(team.id)}`}
+              className="block text-xs font-broadcast tracking-widest mb-1.5"
+              style={{ color: "oklch(0.42 0.02 90)" }}
+            >
+              {label}
+            </label>
+            <input
+              id={`team-${key}-${String(team.id)}`}
+              type="text"
+              value={state[key]}
+              onChange={(e) => update(key, e.target.value)}
+              className={`w-full px-3 py-2 text-sm ${fieldFocusClass}`}
+              style={fieldStyle}
+            />
+          </div>
+        ))}
         <div>
           <label
             htmlFor={`team-purse-${String(team.id)}`}
             className="block text-xs font-broadcast tracking-widest mb-1.5"
-            style={{ color: "oklch(0.45 0.02 90)" }}
+            style={{ color: "oklch(0.42 0.02 90)" }}
           >
             PURSE REMAINING
           </label>
@@ -1466,27 +1250,26 @@ function TeamRow({
         </div>
       </div>
 
-      {/* Team Logo Upload */}
+      {/* Logo upload */}
       <div className="px-4 pb-4">
         <p
-          className="block text-xs font-broadcast tracking-widest mb-2"
-          style={{ color: "oklch(0.45 0.02 90)" }}
+          className="text-xs font-broadcast tracking-widest mb-2"
+          style={{ color: "oklch(0.42 0.02 90)" }}
         >
           TEAM LOGO (circle crop)
         </p>
         <div className="flex items-center gap-3">
-          {/* Circle preview */}
           <div
             className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden"
             style={{
-              background: "oklch(0.14 0.04 265)",
-              border: "1px solid oklch(0.22 0.04 265)",
+              background: "oklch(0.16 0.04 255)",
+              border: "1px solid oklch(0.25 0.03 255)",
             }}
           >
             {state.logoUrl ? (
               <img
                 src={state.logoUrl}
-                alt="Logo preview"
+                alt="Logo"
                 className="w-full h-full object-cover rounded-full"
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = "none";
@@ -1494,12 +1277,10 @@ function TeamRow({
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
-                <ImageIcon size={14} style={{ color: "oklch(0.35 0.02 90)" }} />
+                <ImageIcon size={14} style={{ color: "oklch(0.32 0.02 90)" }} />
               </div>
             )}
           </div>
-
-          {/* Hidden file input */}
           <input
             ref={logoFileInputRef}
             type="file"
@@ -1507,15 +1288,13 @@ function TeamRow({
             className="hidden"
             onChange={handleLogoFileChange}
           />
-
-          {/* Upload button */}
           <button
             type="button"
             onClick={() => logoFileInputRef.current?.click()}
             disabled={isLogoUploading}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-broadcast tracking-wider transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-broadcast tracking-wider transition-all disabled:opacity-60"
             style={{
-              background: "oklch(0.12 0.03 265)",
+              background: "oklch(0.12 0.03 255)",
               border: "1px solid oklch(0.78 0.165 85 / 0.35)",
               color: "oklch(0.78 0.165 85)",
             }}
@@ -1532,16 +1311,15 @@ function TeamRow({
               </>
             )}
           </button>
-
           {state.logoUrl && (
             <button
               type="button"
               onClick={() =>
                 setState((prev) => ({ ...prev, logoUrl: "", isDirty: true }))
               }
-              className="text-xs px-2 py-2 transition-opacity hover:opacity-80"
+              className="text-xs px-2 py-2 hover:opacity-80"
               style={{
-                background: "oklch(0.12 0.03 265)",
+                background: "oklch(0.12 0.03 255)",
                 border: "1px solid oklch(0.62 0.22 25 / 0.35)",
                 color: "oklch(0.62 0.22 25)",
               }}
@@ -1549,14 +1327,13 @@ function TeamRow({
               <Trash2 size={11} />
             </button>
           )}
-
           {isLogoUploading && (
             <div
               className="flex-1 h-0.5 overflow-hidden"
-              style={{ background: "oklch(0.22 0.04 265)" }}
+              style={{ background: "oklch(0.25 0.03 255)" }}
             >
               <div
-                className="h-full transition-all duration-200"
+                className="h-full transition-all"
                 style={{
                   width: `${logoProgress}%`,
                   background:
@@ -1568,24 +1345,24 @@ function TeamRow({
         </div>
       </div>
 
-      {/* Footer action */}
+      {/* Save */}
       <div
         className="px-4 py-3 flex justify-end"
-        style={{ borderTop: "1px solid oklch(0.16 0.035 265)" }}
+        style={{ borderTop: "1px solid oklch(0.18 0.025 255)" }}
       >
         <button
           type="button"
           onClick={handleSave}
           disabled={state.isSaving || !state.isDirty}
-          className="flex items-center gap-2 px-4 py-2 text-xs font-broadcast tracking-wider transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+          className="flex items-center gap-2 px-4 py-2 text-xs font-broadcast tracking-wider hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
           style={{
             background: state.isDirty
               ? "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))"
-              : "oklch(0.14 0.04 265)",
+              : "oklch(0.16 0.03 255)",
             color: state.isDirty
               ? "oklch(0.08 0.025 265)"
-              : "oklch(0.45 0.02 90)",
-            border: state.isDirty ? "none" : "1px solid oklch(0.22 0.04 265)",
+              : "oklch(0.42 0.02 90)",
+            border: state.isDirty ? "none" : "1px solid oklch(0.25 0.03 255)",
           }}
         >
           {state.isSaving ? (
@@ -1596,11 +1373,21 @@ function TeamRow({
           {state.isSaving ? "SAVING…" : "SAVE TEAM"}
         </button>
       </div>
-    </motion.div>
+    </div>
   );
 }
 
-// ─── Player Row ───────────────────────────────────────────────────────────────
+// ─── Player Row ────────────────────────────────────────────────────────────────
+interface PlayerEditState {
+  name: string;
+  category: string;
+  basePrice: string;
+  imageUrl: string;
+  rating: string;
+  isDirty: boolean;
+  isSaving: boolean;
+  isExpanded: boolean;
+}
 
 function PlayerRow({
   player,
@@ -1623,8 +1410,8 @@ function PlayerRow({
   const [state, setState] = useState<PlayerEditState>({
     name: player.name,
     category: player.category,
-    basePrice: String(Number(player.base_price)),
-    imageUrl: player.image_url,
+    basePrice: String(Number(player.basePrice)),
+    imageUrl: player.imageUrl,
     rating: String(Number(player.rating)),
     isDirty: false,
     isSaving: false,
@@ -1647,9 +1434,9 @@ function PlayerRow({
     try {
       const url = await uploadImage(file);
       setState((prev) => ({ ...prev, imageUrl: url, isDirty: true }));
-      toast.success("Photo uploaded successfully");
+      toast.success("Photo uploaded");
     } catch {
-      toast.error("Upload failed. Please try again or paste a URL.");
+      toast.error("Upload failed");
     }
   };
 
@@ -1671,24 +1458,19 @@ function PlayerRow({
     setState((prev) => ({ ...prev, isSaving: false, isDirty: false }));
   };
 
-  const handleDelete = async () => {
-    await onDelete(player.id, player.status);
-  };
-
   const isSold = player.status === "sold";
   const isLive = player.status === "live";
 
   return (
     <motion.div
-      layout
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.97, transition: { duration: 0.15 } }}
       style={{
-        background: "oklch(0.11 0.03 265)",
+        background: "oklch(0.12 0.025 255)",
         border: state.isDirty
           ? "1px solid oklch(0.78 0.165 85 / 0.4)"
-          : "1px solid oklch(0.22 0.04 265)",
+          : "1px solid oklch(0.25 0.03 255)",
         transition: "border-color 0.2s ease",
       }}
     >
@@ -1700,12 +1482,9 @@ function PlayerRow({
           setState((prev) => ({ ...prev, isExpanded: !prev.isExpanded }))
         }
       >
-        {/* Photo thumbnail */}
         <div
-          className="w-9 h-9 flex-shrink-0 overflow-hidden"
-          style={{
-            border: "1px solid oklch(0.22 0.04 265)",
-          }}
+          className="w-8 h-8 flex-shrink-0 overflow-hidden"
+          style={{ border: "1px solid oklch(0.25 0.03 255)" }}
         >
           {state.imageUrl ? (
             <img
@@ -1719,9 +1498,9 @@ function PlayerRow({
           ) : (
             <div
               className="w-full h-full flex items-center justify-center"
-              style={{ background: "oklch(0.14 0.04 265)" }}
+              style={{ background: "oklch(0.16 0.04 255)" }}
             >
-              <ImageIcon size={14} style={{ color: "oklch(0.35 0.02 90)" }} />
+              <ImageIcon size={12} style={{ color: "oklch(0.32 0.02 90)" }} />
             </div>
           )}
         </div>
@@ -1731,7 +1510,7 @@ function PlayerRow({
             <span
               className="font-broadcast text-sm tracking-wide truncate"
               style={{
-                color: isSold ? "oklch(0.45 0.02 90)" : "oklch(0.92 0.02 90)",
+                color: isSold ? "oklch(0.42 0.02 90)" : "oklch(0.9 0.02 90)",
                 textDecoration: isSold ? "line-through" : "none",
               }}
             >
@@ -1766,9 +1545,9 @@ function PlayerRow({
           <div className="flex items-center gap-3 mt-1">
             <span
               className="font-digital text-xs"
-              style={{ color: "oklch(0.55 0.02 90)" }}
+              style={{ color: "oklch(0.52 0.02 90)" }}
             >
-              {Number(player.base_price).toLocaleString()} pts
+              {Number(player.basePrice).toLocaleString()} pts
             </span>
             <StarRating value={Number(player.rating)} />
             {state.isDirty && (
@@ -1782,11 +1561,11 @@ function PlayerRow({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex-shrink-0">
           {state.isExpanded ? (
-            <ChevronUp size={14} style={{ color: "oklch(0.45 0.02 90)" }} />
+            <ChevronUp size={14} style={{ color: "oklch(0.42 0.02 90)" }} />
           ) : (
-            <ChevronDown size={14} style={{ color: "oklch(0.45 0.02 90)" }} />
+            <ChevronDown size={14} style={{ color: "oklch(0.42 0.02 90)" }} />
           )}
         </div>
       </button>
@@ -1801,7 +1580,7 @@ function PlayerRow({
             transition={{ duration: 0.2 }}
             style={{
               overflow: "hidden",
-              borderTop: "1px solid oklch(0.16 0.035 265)",
+              borderTop: "1px solid oklch(0.18 0.025 255)",
             }}
           >
             <div className="p-4 space-y-3">
@@ -1810,7 +1589,7 @@ function PlayerRow({
                   <label
                     htmlFor={`p-name-${String(player.id)}`}
                     className="block text-xs font-broadcast tracking-widest mb-1.5"
-                    style={{ color: "oklch(0.45 0.02 90)" }}
+                    style={{ color: "oklch(0.42 0.02 90)" }}
                   >
                     PLAYER NAME
                   </label>
@@ -1827,7 +1606,7 @@ function PlayerRow({
                   <label
                     htmlFor={`p-cat-${String(player.id)}`}
                     className="block text-xs font-broadcast tracking-widest mb-1.5"
-                    style={{ color: "oklch(0.45 0.02 90)" }}
+                    style={{ color: "oklch(0.42 0.02 90)" }}
                   >
                     CATEGORY
                   </label>
@@ -1847,7 +1626,7 @@ function PlayerRow({
                   <label
                     htmlFor={`p-bp-${String(player.id)}`}
                     className="block text-xs font-broadcast tracking-widest mb-1.5"
-                    style={{ color: "oklch(0.45 0.02 90)" }}
+                    style={{ color: "oklch(0.42 0.02 90)" }}
                   >
                     BASE PRICE (pts)
                   </label>
@@ -1866,7 +1645,7 @@ function PlayerRow({
                   <label
                     htmlFor={`p-rating-${String(player.id)}`}
                     className="block text-xs font-broadcast tracking-widest mb-1.5"
-                    style={{ color: "oklch(0.45 0.02 90)" }}
+                    style={{ color: "oklch(0.42 0.02 90)" }}
                   >
                     RATING (1–5)
                   </label>
@@ -1882,12 +1661,13 @@ function PlayerRow({
                   />
                 </div>
               </div>
-              {/* Image URL full width with preview + upload */}
+
+              {/* Photo URL + upload */}
               <div>
                 <label
                   htmlFor={`p-img-${String(player.id)}`}
                   className="block text-xs font-broadcast tracking-widest mb-1.5"
-                  style={{ color: "oklch(0.45 0.02 90)" }}
+                  style={{ color: "oklch(0.42 0.02 90)" }}
                 >
                   PHOTO URL
                 </label>
@@ -1895,7 +1675,7 @@ function PlayerRow({
                   {state.imageUrl && (
                     <div
                       className="w-10 h-10 flex-shrink-0 overflow-hidden"
-                      style={{ border: "1px solid oklch(0.22 0.04 265)" }}
+                      style={{ border: "1px solid oklch(0.25 0.03 255)" }}
                     >
                       <img
                         src={state.imageUrl}
@@ -1916,7 +1696,6 @@ function PlayerRow({
                     className={`flex-1 px-3 py-2 text-sm ${fieldFocusClass}`}
                     style={{ ...fieldStyle, fontFamily: "inherit" }}
                   />
-                  {/* Hidden file input */}
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -1924,34 +1703,22 @@ function PlayerRow({
                     className="hidden"
                     onChange={handleFileChange}
                   />
-                  {/* Upload button */}
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isUploading}
-                    title="Upload photo from device"
-                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-broadcast tracking-wider transition-all flex-shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
+                    title="Upload photo"
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-broadcast tracking-wider flex-shrink-0 disabled:opacity-60"
                     style={{
-                      background: "oklch(0.12 0.03 265)",
+                      background: "oklch(0.12 0.03 255)",
                       border: "1px solid oklch(0.78 0.165 85 / 0.35)",
                       color: "oklch(0.78 0.165 85)",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!isUploading) {
-                        (
-                          e.currentTarget as HTMLButtonElement
-                        ).style.background = "oklch(0.78 0.165 85 / 0.12)";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLButtonElement).style.background =
-                        "oklch(0.12 0.03 265)";
                     }}
                   >
                     {isUploading ? (
                       <>
                         <Loader2 size={11} className="animate-spin" />
-                        <span>{progress}%</span>
+                        {progress}%
                       </>
                     ) : (
                       <>
@@ -1964,10 +1731,10 @@ function PlayerRow({
                 {isUploading && (
                   <div
                     className="mt-1.5 h-0.5 overflow-hidden"
-                    style={{ background: "oklch(0.22 0.04 265)" }}
+                    style={{ background: "oklch(0.25 0.03 255)" }}
                   >
                     <div
-                      className="h-full transition-all duration-200"
+                      className="h-full transition-all"
                       style={{
                         width: `${progress}%`,
                         background:
@@ -1981,17 +1748,17 @@ function PlayerRow({
               {/* Actions */}
               <div
                 className="flex items-center justify-between pt-2"
-                style={{ borderTop: "1px solid oklch(0.16 0.035 265)" }}
+                style={{ borderTop: "1px solid oklch(0.18 0.025 255)" }}
               >
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleDelete();
+                    onDelete(player.id, player.status);
                   }}
-                  className="flex items-center gap-2 px-3 py-2 text-xs font-broadcast tracking-wider transition-all hover:opacity-80"
+                  className="flex items-center gap-2 px-3 py-2 text-xs font-broadcast tracking-wider hover:opacity-80"
                   style={{
-                    background: "oklch(0.12 0.03 265)",
+                    background: "oklch(0.12 0.03 255)",
                     border: "1px solid oklch(0.62 0.22 25 / 0.35)",
                     color: "oklch(0.62 0.22 25)",
                   }}
@@ -2006,17 +1773,17 @@ function PlayerRow({
                     handleSave();
                   }}
                   disabled={state.isSaving || !state.isDirty}
-                  className="flex items-center gap-2 px-4 py-2 text-xs font-broadcast tracking-wider transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="flex items-center gap-2 px-4 py-2 text-xs font-broadcast tracking-wider hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
                   style={{
                     background: state.isDirty
                       ? "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))"
-                      : "oklch(0.14 0.04 265)",
+                      : "oklch(0.16 0.03 255)",
                     color: state.isDirty
                       ? "oklch(0.08 0.025 265)"
-                      : "oklch(0.45 0.02 90)",
+                      : "oklch(0.42 0.02 90)",
                     border: state.isDirty
                       ? "none"
-                      : "1px solid oklch(0.22 0.04 265)",
+                      : "1px solid oklch(0.25 0.03 255)",
                   }}
                 >
                   {state.isSaving ? (
@@ -2035,8 +1802,7 @@ function PlayerRow({
   );
 }
 
-// ─── Add Player Modal ─────────────────────────────────────────────────────────
-
+// ─── Add Player Modal ──────────────────────────────────────────────────────────
 function AddPlayerModal({
   onClose,
   onAdd,
@@ -2067,6 +1833,10 @@ function AddPlayerModal({
     progress: modalProgress,
   } = useImageUpload();
 
+  useEffect(() => {
+    nameRef.current?.focus();
+  }, []);
+
   const handleModalFileChange = async (
     e: React.ChangeEvent<HTMLInputElement>,
   ) => {
@@ -2076,15 +1846,11 @@ function AddPlayerModal({
     try {
       const url = await uploadImage(file);
       setForm((prev) => ({ ...prev, imageUrl: url }));
-      toast.success("Photo uploaded successfully");
+      toast.success("Photo uploaded");
     } catch {
-      toast.error("Upload failed. Please try again or paste a URL.");
+      toast.error("Upload failed");
     }
   };
-
-  useEffect(() => {
-    nameRef.current?.focus();
-  }, []);
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -2138,16 +1904,15 @@ function AddPlayerModal({
         transition={{ duration: 0.2 }}
         className="w-full max-w-lg"
         style={{
-          background: "oklch(0.11 0.03 265)",
+          background: "oklch(0.12 0.025 255)",
           border: "1px solid oklch(0.78 0.165 85 / 0.3)",
           boxShadow: "0 0 60px oklch(0.78 0.165 85 / 0.1)",
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Modal header */}
         <div
           className="flex items-center justify-between px-5 py-4"
-          style={{ borderBottom: "1px solid oklch(0.16 0.035 265)" }}
+          style={{ borderBottom: "1px solid oklch(0.18 0.025 255)" }}
         >
           <div className="flex items-center gap-2">
             <Plus size={14} style={{ color: "oklch(0.78 0.165 85)" }} />
@@ -2161,8 +1926,8 @@ function AddPlayerModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-xs transition-opacity hover:opacity-70"
-            style={{ color: "oklch(0.45 0.02 90)" }}
+            className="text-xs hover:opacity-70"
+            style={{ color: "oklch(0.42 0.02 90)" }}
           >
             ✕
           </button>
@@ -2174,7 +1939,7 @@ function AddPlayerModal({
               <label
                 htmlFor="add-player-name"
                 className="block text-xs font-broadcast tracking-widest mb-1.5"
-                style={{ color: "oklch(0.45 0.02 90)" }}
+                style={{ color: "oklch(0.42 0.02 90)" }}
               >
                 PLAYER NAME *
               </label>
@@ -2200,14 +1965,14 @@ function AddPlayerModal({
             </div>
             <div>
               <label
-                htmlFor="add-player-category"
+                htmlFor="add-player-cat"
                 className="block text-xs font-broadcast tracking-widest mb-1.5"
-                style={{ color: "oklch(0.45 0.02 90)" }}
+                style={{ color: "oklch(0.42 0.02 90)" }}
               >
                 CATEGORY
               </label>
               <select
-                id="add-player-category"
+                id="add-player-cat"
                 value={form.category}
                 onChange={(e) => upd("category", e.target.value)}
                 className={`w-full px-3 py-2 text-sm ${fieldFocusClass}`}
@@ -2220,14 +1985,14 @@ function AddPlayerModal({
             </div>
             <div>
               <label
-                htmlFor="add-player-base-price"
+                htmlFor="add-player-bp"
                 className="block text-xs font-broadcast tracking-widest mb-1.5"
-                style={{ color: "oklch(0.45 0.02 90)" }}
+                style={{ color: "oklch(0.42 0.02 90)" }}
               >
                 BASE PRICE *
               </label>
               <input
-                id="add-player-base-price"
+                id="add-player-bp"
                 type="number"
                 value={form.basePrice}
                 onChange={(e) => upd("basePrice", e.target.value)}
@@ -2250,7 +2015,7 @@ function AddPlayerModal({
               <label
                 htmlFor="add-player-rating"
                 className="block text-xs font-broadcast tracking-widest mb-1.5"
-                style={{ color: "oklch(0.45 0.02 90)" }}
+                style={{ color: "oklch(0.42 0.02 90)" }}
               >
                 RATING (1–5) *
               </label>
@@ -2276,9 +2041,9 @@ function AddPlayerModal({
             </div>
             <div className="col-span-2">
               <label
-                htmlFor="add-player-image-url"
+                htmlFor="add-player-img"
                 className="block text-xs font-broadcast tracking-widest mb-1.5"
-                style={{ color: "oklch(0.45 0.02 90)" }}
+                style={{ color: "oklch(0.42 0.02 90)" }}
               >
                 PHOTO URL
               </label>
@@ -2286,7 +2051,7 @@ function AddPlayerModal({
                 {form.imageUrl && (
                   <div
                     className="w-10 h-10 flex-shrink-0 overflow-hidden"
-                    style={{ border: "1px solid oklch(0.22 0.04 265)" }}
+                    style={{ border: "1px solid oklch(0.25 0.03 255)" }}
                   >
                     <img
                       src={form.imageUrl}
@@ -2299,7 +2064,7 @@ function AddPlayerModal({
                   </div>
                 )}
                 <input
-                  id="add-player-image-url"
+                  id="add-player-img"
                   type="url"
                   value={form.imageUrl}
                   onChange={(e) => upd("imageUrl", e.target.value)}
@@ -2307,7 +2072,6 @@ function AddPlayerModal({
                   className={`flex-1 px-3 py-2 text-sm ${fieldFocusClass}`}
                   style={{ ...fieldStyle, fontFamily: "inherit" }}
                 />
-                {/* Hidden file input */}
                 <input
                   ref={modalFileInputRef}
                   type="file"
@@ -2315,33 +2079,21 @@ function AddPlayerModal({
                   className="hidden"
                   onChange={handleModalFileChange}
                 />
-                {/* Upload button */}
                 <button
                   type="button"
                   onClick={() => modalFileInputRef.current?.click()}
                   disabled={isModalUploading}
-                  title="Upload photo from device"
-                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-broadcast tracking-wider transition-all flex-shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-broadcast tracking-wider flex-shrink-0 disabled:opacity-60"
                   style={{
-                    background: "oklch(0.12 0.03 265)",
+                    background: "oklch(0.12 0.03 255)",
                     border: "1px solid oklch(0.78 0.165 85 / 0.35)",
                     color: "oklch(0.78 0.165 85)",
-                  }}
-                  onMouseEnter={(e) => {
-                    if (!isModalUploading) {
-                      (e.currentTarget as HTMLButtonElement).style.background =
-                        "oklch(0.78 0.165 85 / 0.12)";
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLButtonElement).style.background =
-                      "oklch(0.12 0.03 265)";
                   }}
                 >
                   {isModalUploading ? (
                     <>
                       <Loader2 size={11} className="animate-spin" />
-                      <span>{modalProgress}%</span>
+                      {modalProgress}%
                     </>
                   ) : (
                     <>
@@ -2354,10 +2106,10 @@ function AddPlayerModal({
               {isModalUploading && (
                 <div
                   className="mt-1.5 h-0.5 overflow-hidden"
-                  style={{ background: "oklch(0.22 0.04 265)" }}
+                  style={{ background: "oklch(0.25 0.03 255)" }}
                 >
                   <div
-                    className="h-full transition-all duration-200"
+                    className="h-full transition-all"
                     style={{
                       width: `${modalProgress}%`,
                       background:
@@ -2369,15 +2121,15 @@ function AddPlayerModal({
             </div>
           </div>
 
-          <div className="flex gap-3 pt-1">
+          <div className="flex gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2.5 text-sm font-broadcast tracking-wider transition-opacity hover:opacity-80"
+              className="flex-1 py-2.5 text-sm font-broadcast tracking-wider hover:opacity-80"
               style={{
-                background: "oklch(0.14 0.04 265)",
-                border: "1px solid oklch(0.22 0.04 265)",
-                color: "oklch(0.55 0.02 90)",
+                background: "oklch(0.16 0.03 255)",
+                border: "1px solid oklch(0.25 0.03 255)",
+                color: "oklch(0.52 0.02 90)",
               }}
             >
               CANCEL
@@ -2385,7 +2137,7 @@ function AddPlayerModal({
             <button
               type="submit"
               disabled={isAdding}
-              className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-broadcast tracking-wider transition-all hover:opacity-90 disabled:opacity-50"
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-broadcast tracking-wider hover:opacity-90 disabled:opacity-50"
               style={{
                 background:
                   "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))",
@@ -2406,8 +2158,7 @@ function AddPlayerModal({
   );
 }
 
-// ─── Teams Tab ────────────────────────────────────────────────────────────────
-
+// ─── Teams Tab ─────────────────────────────────────────────────────────────────
 function TeamsTab({
   teams,
   onRefresh,
@@ -2444,7 +2195,7 @@ function TeamsTab({
         return;
       }
 
-      toast.success("Team saved successfully");
+      toast.success("Team saved");
       await onRefresh();
     } catch {
       toast.error("Failed to save team");
@@ -2454,8 +2205,8 @@ function TeamsTab({
   return (
     <div className="space-y-3">
       <div
-        className="px-1 flex items-center gap-2 text-xs"
-        style={{ color: "oklch(0.45 0.02 90)" }}
+        className="flex items-center gap-2 text-xs"
+        style={{ color: "oklch(0.42 0.02 90)" }}
       >
         <Users size={12} />
         <span>
@@ -2470,8 +2221,7 @@ function TeamsTab({
   );
 }
 
-// ─── Players Tab ──────────────────────────────────────────────────────────────
-
+// ─── Players Tab ───────────────────────────────────────────────────────────────
 function PlayersTab({
   players,
   onRefresh,
@@ -2525,7 +2275,7 @@ function PlayersTab({
   const handleDeletePlayer = async (id: bigint, status: string) => {
     if (status !== "upcoming") {
       const confirmed = confirm(
-        `⚠️ This player has status "${status}". Deleting them may affect auction state. Proceed?`,
+        `⚠️ This player has status "${status}". Deleting may affect auction state. Proceed?`,
       );
       if (!confirmed) return;
     }
@@ -2563,7 +2313,7 @@ function PlayersTab({
         toast.error(`Add failed: ${result.err}`);
         return;
       }
-      toast.success(`${data.name} added to player pool`);
+      toast.success(`${data.name} added to pool`);
       setShowAddModal(false);
       await onRefresh();
     } catch {
@@ -2581,7 +2331,6 @@ function PlayersTab({
   return (
     <>
       <div className="space-y-4">
-        {/* Filter + stats bar */}
         <div className="flex items-center gap-2 flex-wrap">
           {(["All", "Batsman", "Bowler", "Allrounder"] as const).map((cat) => (
             <button
@@ -2595,19 +2344,19 @@ function PlayersTab({
                     ? cat === "All"
                       ? "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))"
                       : `${CATEGORY_COLORS[cat] ?? "oklch(0.78 0.165 85)"}22`
-                    : "oklch(0.14 0.04 265)",
+                    : "oklch(0.16 0.03 255)",
                 border:
                   filterCategory === cat
                     ? cat === "All"
                       ? "none"
-                      : `1px solid ${CATEGORY_COLORS[cat] ?? "oklch(0.78 0.165 85)"}66`
-                    : "1px solid oklch(0.22 0.04 265)",
+                      : `1px solid ${CATEGORY_COLORS[cat] ?? "oklch(0.78 0.165 85)"}55`
+                    : "1px solid oklch(0.25 0.03 255)",
                 color:
                   filterCategory === cat
                     ? cat === "All"
                       ? "oklch(0.08 0.025 265)"
                       : (CATEGORY_COLORS[cat] ?? "oklch(0.78 0.165 85)")
-                    : "oklch(0.55 0.02 90)",
+                    : "oklch(0.52 0.02 90)",
               }}
             >
               {cat} ({counts[cat as keyof typeof counts]})
@@ -2615,13 +2364,12 @@ function PlayersTab({
           ))}
           <span
             className="ml-auto text-xs"
-            style={{ color: "oklch(0.35 0.02 90)" }}
+            style={{ color: "oklch(0.32 0.02 90)" }}
           >
-            Click any player row to expand & edit
+            Click any player row to expand
           </span>
         </div>
 
-        {/* Player list */}
         <AnimatePresence mode="popLayout">
           {filtered.map((player) => (
             <PlayerRow
@@ -2636,7 +2384,7 @@ function PlayersTab({
         {filtered.length === 0 && (
           <div
             className="py-12 text-center"
-            style={{ color: "oklch(0.35 0.02 90)" }}
+            style={{ color: "oklch(0.32 0.02 90)" }}
           >
             <div className="text-4xl mb-3">🏏</div>
             <div className="font-broadcast text-xs tracking-widest">
@@ -2667,7 +2415,6 @@ function PlayersTab({
         </motion.button>
       </div>
 
-      {/* Add modal */}
       <AnimatePresence>
         {showAddModal && (
           <AddPlayerModal
@@ -2680,8 +2427,7 @@ function PlayersTab({
   );
 }
 
-// ─── Main Settings Page ───────────────────────────────────────────────────────
-
+// ─── Main Settings Page ────────────────────────────────────────────────────────
 export default function SettingsPage() {
   const navigate = useNavigate();
   const { actor, isFetching } = useActor();
@@ -2692,8 +2438,10 @@ export default function SettingsPage() {
     "league" | "teams" | "players" | "live-layout"
   >("league");
 
-  // Auth guard
-  const isAuthed = sessionStorage.getItem("spl_admin_auth") === "true";
+  // Auth guard — check localStorage
+  const isAuthed =
+    localStorage.getItem("spl_admin_auth") === "1" ||
+    localStorage.getItem("spl_admin_auth") === "true";
 
   useEffect(() => {
     if (!isAuthed) {
@@ -2753,21 +2501,21 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-background pb-24">
-      {/* Sticky header */}
+      {/* Header */}
       <header
-        className="sticky top-0 z-40 flex items-center justify-between px-6 py-3"
+        className="sticky top-0 z-40 flex items-center justify-between px-4 py-3"
         style={{
-          background: "oklch(0.09 0.03 265 / 0.97)",
+          background: "oklch(0.1 0.025 255 / 0.97)",
           borderBottom: "1px solid oklch(0.78 0.165 85 / 0.2)",
           backdropFilter: "blur(12px)",
         }}
       >
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => navigate({ to: "/admin" })}
-            className="flex items-center gap-1.5 text-sm transition-opacity hover:opacity-70"
-            style={{ color: "oklch(0.55 0.02 90)" }}
+            className="flex items-center gap-1.5 text-sm hover:opacity-70"
+            style={{ color: "oklch(0.52 0.02 90)" }}
           >
             <ArrowLeft size={15} />
             <span className="hidden sm:inline font-broadcast text-xs tracking-wider">
@@ -2776,23 +2524,23 @@ export default function SettingsPage() {
           </button>
           <div
             className="h-4 w-px"
-            style={{ background: "oklch(0.22 0.04 265)" }}
+            style={{ background: "oklch(0.25 0.03 255)" }}
           />
           <div className="flex items-center gap-2">
             <Settings size={15} style={{ color: "oklch(0.78 0.165 85)" }} />
             <span
-              className="font-broadcast text-base tracking-wider"
+              className="font-broadcast text-sm tracking-wider"
               style={{ color: "oklch(0.78 0.165 85)" }}
             >
-              SPL
+              SPL 2026
             </span>
-            <span className="text-xs" style={{ color: "oklch(0.45 0.02 90)" }}>
+            <span className="text-xs" style={{ color: "oklch(0.42 0.02 90)" }}>
               — Settings
             </span>
           </div>
         </div>
 
-        {/* Tab switcher in header (desktop) */}
+        {/* Tab switcher (desktop) */}
         <div className="hidden sm:flex items-center gap-1">
           {tabs.map((tab) => (
             <button
@@ -2812,7 +2560,7 @@ export default function SettingsPage() {
                 color:
                   activeTab === tab.id
                     ? "oklch(0.78 0.165 85)"
-                    : "oklch(0.45 0.02 90)",
+                    : "oklch(0.42 0.02 90)",
               }}
             >
               {tab.icon}
@@ -2824,7 +2572,7 @@ export default function SettingsPage() {
                     color:
                       activeTab === tab.id
                         ? "oklch(0.78 0.165 85 / 0.7)"
-                        : "oklch(0.35 0.02 90)",
+                        : "oklch(0.32 0.02 90)",
                   }}
                 >
                   ({tab.count})
@@ -2838,7 +2586,7 @@ export default function SettingsPage() {
       {/* Mobile tab bar */}
       <div
         className="sm:hidden flex"
-        style={{ borderBottom: "1px solid oklch(0.22 0.04 265)" }}
+        style={{ borderBottom: "1px solid oklch(0.25 0.03 255)" }}
       >
         {tabs.map((tab) => (
           <button
@@ -2858,7 +2606,7 @@ export default function SettingsPage() {
               color:
                 activeTab === tab.id
                   ? "oklch(0.78 0.165 85)"
-                  : "oklch(0.45 0.02 90)",
+                  : "oklch(0.42 0.02 90)",
             }}
           >
             {tab.icon}
@@ -2875,7 +2623,6 @@ export default function SettingsPage() {
             key="league"
             initial={{ opacity: 0, x: -8 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 8 }}
             transition={{ duration: 0.18 }}
           >
             <LeagueTab />
@@ -2885,7 +2632,6 @@ export default function SettingsPage() {
             key="live-layout"
             initial={{ opacity: 0, x: 8 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -8 }}
             transition={{ duration: 0.18 }}
           >
             <LiveLayoutTab />

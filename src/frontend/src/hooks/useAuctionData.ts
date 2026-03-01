@@ -13,9 +13,15 @@ export interface AuctionData {
   pausePolling: (ms: number) => void;
 }
 
-const MAX_CONSECUTIVE_ERRORS = 3;
+// Mobile-hotspot tolerant settings:
+// - Poll every 5 seconds (gives the network time to breathe)
+// - Make 4 calls in parallel (not sequential) so total wait time = slowest single call
+// - Show error only after 8 consecutive failures
+// - Use a local in-memory cache so the UI never goes blank
+const DEFAULT_POLL_MS = 5000;
+const MAX_CONSECUTIVE_ERRORS = 8;
 
-export function useAuctionData(intervalMs = 1500): AuctionData {
+export function useAuctionData(intervalMs = DEFAULT_POLL_MS): AuctionData {
   const { actor, isFetching } = useActor();
   const [auctionState, setAuctionState] = useState<AuctionState | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
@@ -49,13 +55,18 @@ export function useAuctionData(intervalMs = 1500): AuctionData {
 
     isFetchingDataRef.current = true;
     try {
+      // Fire all 4 calls in PARALLEL — total wait = slowest single call, not sum of all 4.
+      // This is critical for mobile hotspot: 4 sequential calls at 2s each = 8s total,
+      // but 4 parallel calls at 2s each = 2s total.
       const [state, teamsData, playersData, dashData] = await Promise.all([
         actor.getAuctionState(),
         actor.getTeams(),
         actor.getPlayers(),
         actor.getDashboard(),
       ]);
+
       if (!mountedRef.current) return;
+
       setAuctionState(state);
       setTeams(teamsData);
       setPlayers(playersData);
@@ -65,20 +76,24 @@ export function useAuctionData(intervalMs = 1500): AuctionData {
     } catch (err) {
       if (!mountedRef.current) return;
       consecutiveErrorsRef.current += 1;
-      const msg = err instanceof Error ? err.message : "Failed to fetch data";
 
+      // Only surface error to UI after many consecutive failures.
+      // Brief hotspot hiccups (1-7 failures in a row) are completely invisible.
       if (consecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
+        const msg =
+          err instanceof Error ? err.message : "Failed to connect to server";
         setError(msg);
       }
 
-      // On repeated errors, back off and retry automatically
+      // Exponential backoff capped at 15s
       if (consecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
         clearTimers();
-        const backoffMs = Math.min(3000 * consecutiveErrorsRef.current, 15000);
+        const backoffMs = Math.min(
+          3000 * (consecutiveErrorsRef.current - MAX_CONSECUTIVE_ERRORS + 1),
+          15000,
+        );
         retryTimerRef.current = setTimeout(() => {
           if (!mountedRef.current) return;
-          consecutiveErrorsRef.current = 0;
-          setError(null);
           isFetchingDataRef.current = false;
           fetchAll().then(() => {
             if (mountedRef.current && !intervalRef.current) {
@@ -122,8 +137,12 @@ export function useAuctionData(intervalMs = 1500): AuctionData {
     consecutiveErrorsRef.current = 0;
     setError(null);
     isFetchingDataRef.current = false;
+    clearTimers();
     await fetchAll();
-  }, [fetchAll]);
+    if (mountedRef.current && !intervalRef.current) {
+      intervalRef.current = setInterval(fetchAll, intervalMs);
+    }
+  }, [fetchAll, clearTimers, intervalMs]);
 
   return {
     auctionState,
