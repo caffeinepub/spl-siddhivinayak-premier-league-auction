@@ -47,133 +47,7 @@ function CustomTooltip({
   return null;
 }
 
-// ─── SOLD Overlay ──────────────────────────────────────────────────────────────
-function SoldOverlay({
-  show,
-  teamName,
-  playerName,
-  soldPrice,
-}: {
-  show: boolean;
-  teamName: string;
-  playerName: string;
-  soldPrice: number;
-}) {
-  return (
-    <AnimatePresence>
-      {show && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.3 }}
-          className="fixed inset-0 z-50 flex flex-col items-center justify-center"
-          style={{
-            background: "oklch(0.06 0.02 255 / 0.96)",
-            backdropFilter: "blur(8px)",
-          }}
-        >
-          {/* Radial burst */}
-          <div
-            className="absolute inset-0 pointer-events-none"
-            style={{
-              background: [
-                "radial-gradient(ellipse 50% 40% at 50% 50%, oklch(0.78 0.165 85 / 0.22) 0%, transparent 60%)",
-                "radial-gradient(ellipse 80% 60% at 50% 50%, oklch(0.65 0.14 75 / 0.08) 0%, transparent 80%)",
-              ].join(", "),
-            }}
-          />
-          {/* Light beam */}
-          <div
-            className="absolute inset-x-0 pointer-events-none"
-            style={{
-              top: "50%",
-              height: "1px",
-              background:
-                "linear-gradient(90deg, transparent 0%, oklch(0.78 0.165 85 / 0.6) 30%, oklch(0.88 0.18 88) 50%, oklch(0.78 0.165 85 / 0.6) 70%, transparent 100%)",
-              transform: "translateY(-50%)",
-              boxShadow: "0 0 40px 20px oklch(0.78 0.165 85 / 0.15)",
-            }}
-          />
-
-          <motion.div
-            initial={{ scale: 0.4, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.85, opacity: 0 }}
-            transition={{ type: "spring", damping: 14, stiffness: 220 }}
-            className="relative z-10 text-center px-8"
-          >
-            <motion.div
-              initial={{ letterSpacing: "0.5em", opacity: 0 }}
-              animate={{ letterSpacing: "-0.02em", opacity: 1 }}
-              transition={{ duration: 0.5, ease: "easeOut" }}
-              className="font-broadcast"
-              style={{
-                fontSize: "clamp(90px, 18vw, 200px)",
-                color: "oklch(0.78 0.165 85)",
-                textShadow: [
-                  "0 0 30px oklch(0.88 0.18 88 / 0.9)",
-                  "0 0 60px oklch(0.78 0.165 85 / 0.6)",
-                  "0 0 120px oklch(0.78 0.165 85 / 0.3)",
-                ].join(", "),
-                lineHeight: 0.9,
-              }}
-            >
-              SOLD!
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.25, duration: 0.4 }}
-              className="mt-6"
-            >
-              <div
-                className="w-48 h-px mx-auto mb-5"
-                style={{
-                  background:
-                    "linear-gradient(90deg, transparent, oklch(0.78 0.165 85 / 0.7), transparent)",
-                }}
-              />
-              <div
-                className="font-broadcast mb-2"
-                style={{
-                  fontSize: "clamp(20px, 3.5vw, 44px)",
-                  color: "oklch(0.94 0.02 90)",
-                  letterSpacing: "-0.01em",
-                }}
-              >
-                {playerName}
-              </div>
-              <div
-                className="font-broadcast mb-5"
-                style={{
-                  fontSize: "clamp(16px, 2.5vw, 32px)",
-                  color: "oklch(0.78 0.165 85)",
-                  letterSpacing: "0.06em",
-                }}
-              >
-                TO {teamName.toUpperCase()}
-              </div>
-              <div
-                className="font-digital inline-block px-8 py-3"
-                style={{
-                  fontSize: "clamp(28px, 5vw, 64px)",
-                  color: "oklch(0.08 0.025 265)",
-                  background:
-                    "linear-gradient(135deg, oklch(0.88 0.18 88), oklch(0.78 0.165 85), oklch(0.65 0.14 75))",
-                  fontWeight: 700,
-                }}
-              >
-                {soldPrice.toLocaleString()} PTS
-              </div>
-            </motion.div>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-}
+// SoldOverlay component removed — replaced with inline photo banner + team display
 
 // ─── Live Page ─────────────────────────────────────────────────────────────────
 export default function LivePage() {
@@ -192,11 +66,12 @@ export default function LivePage() {
   const prevActiveRef = useRef(false);
   const [bidBumping, setBidBumping] = useState(false);
   const [soldOverlay, setSoldOverlay] = useState(false);
-  const [soldInfo, setSoldInfo] = useState({
-    teamName: "",
-    playerName: "",
-    soldPrice: 0,
-  });
+  // State for the 2-second team display below the photo after SOLD
+  const [soldTeamDisplay, setSoldTeamDisplay] = useState<{
+    teamId: string;
+    teamName: string;
+    soldPrice: number;
+  } | null>(null);
 
   const currentBid = Number(auctionState?.currentBid ?? 0);
 
@@ -234,17 +109,20 @@ export default function LivePage() {
         (p) => currentPlayer && p.id === currentPlayer.id,
       );
       if (soldP) {
-        setSoldInfo({
-          teamName: leadingTeam.name,
-          playerName: soldP.name,
-          soldPrice:
-            soldP.soldPrice !== undefined
-              ? Number(soldP.soldPrice)
-              : currentBid,
-        });
+        const finalPrice =
+          soldP.soldPrice !== undefined ? Number(soldP.soldPrice) : currentBid;
         setSoldOverlay(true);
-        const t = setTimeout(() => setSoldOverlay(false), 4000);
-        return () => clearTimeout(t);
+        setSoldTeamDisplay({
+          teamId: String(leadingTeam.id),
+          teamName: leadingTeam.name,
+          soldPrice: finalPrice,
+        });
+        const t1 = setTimeout(() => setSoldOverlay(false), 2000);
+        const t2 = setTimeout(() => setSoldTeamDisplay(null), 2000);
+        return () => {
+          clearTimeout(t1);
+          clearTimeout(t2);
+        };
       }
     }
   }, [auctionState?.isActive, currentPlayer, leadingTeam, players, currentBid]);
@@ -390,6 +268,7 @@ export default function LivePage() {
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 0.4 }}
                 className="relative mb-3"
+                style={{ overflow: "visible" }}
               >
                 <div
                   className="overflow-hidden"
@@ -403,6 +282,7 @@ export default function LivePage() {
                       "0 0 80px oklch(0.78 0.165 85 / 0.1)",
                       "0 20px 60px oklch(0 0 0 / 0.6)",
                     ].join(", "),
+                    position: "relative",
                   }}
                 >
                   {currentPlayer.imageUrl ? (
@@ -427,7 +307,55 @@ export default function LivePage() {
                       {currentPlayer.name.charAt(0)}
                     </div>
                   )}
+
+                  {/* SOLD diagonal banner — on photo, bottom-left, bleeds outside */}
+                  <AnimatePresence>
+                    {soldOverlay && (
+                      <motion.div
+                        key="sold-banner"
+                        initial={{ opacity: 0, x: -40, y: 40 }}
+                        animate={{ opacity: 1, x: 0, y: 0 }}
+                        exit={{ opacity: 0, x: -20, y: 20 }}
+                        transition={{ duration: 0.3, ease: "easeOut" }}
+                        style={{
+                          position: "absolute",
+                          bottom: "-18px",
+                          left: "-22px",
+                          width: "180%",
+                          pointerEvents: "none",
+                          zIndex: 10,
+                          transformOrigin: "bottom left",
+                          transform: "rotate(-28deg)",
+                        }}
+                      >
+                        <div
+                          style={{
+                            background:
+                              "linear-gradient(90deg, oklch(0.55 0.22 25), oklch(0.72 0.22 35) 40%, oklch(0.78 0.165 85))",
+                            padding: "10px 40px 10px 24px",
+                            boxShadow:
+                              "0 4px 24px oklch(0 0 0 / 0.5), 0 0 30px oklch(0.72 0.22 35 / 0.4)",
+                          }}
+                        >
+                          <span
+                            className="font-broadcast tracking-widest"
+                            style={{
+                              fontSize: "clamp(22px, 3.5vw, 38px)",
+                              color: "oklch(0.98 0.01 90)",
+                              textShadow:
+                                "0 2px 8px oklch(0 0 0 / 0.5), 0 0 20px oklch(0.78 0.165 85 / 0.6)",
+                              display: "block",
+                              lineHeight: 1,
+                            }}
+                          >
+                            SOLD!
+                          </span>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
+
                 {/* Gold corner brackets */}
                 {(["tl", "tr", "bl", "br"] as const).map((corner) => (
                   <div
@@ -811,65 +739,154 @@ export default function LivePage() {
             </div>
           </div>
 
-          {/* Purse Bar Chart */}
+          {/* Purse Bar Chart — replaced with team SOLD display for 2s after SOLD */}
           <div
             className="p-3 flex-shrink-0"
             style={{ borderTop: "1px solid oklch(0.16 0.03 255)" }}
           >
-            <div className="flex items-center gap-2 mb-2">
-              <div
-                className="w-0.5 h-3 flex-shrink-0"
-                style={{ background: "oklch(0.78 0.165 85)" }}
-              />
-              <span
-                className="font-broadcast text-xs tracking-widest"
-                style={{ color: "oklch(0.78 0.165 85)" }}
-              >
-                PURSE REMAINING
-              </span>
-            </div>
-            {teams.length > 0 && (
-              <ResponsiveContainer width="100%" height={layout.chartHeight}>
-                <BarChart
-                  data={chartData}
-                  layout="vertical"
-                  margin={{ top: 0, right: 10, left: 0, bottom: 0 }}
+            <AnimatePresence mode="wait">
+              {soldTeamDisplay ? (
+                <motion.div
+                  key="sold-team-display"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  transition={{ duration: 0.3 }}
+                  className="flex flex-col items-center justify-center py-2 gap-2"
                 >
-                  <XAxis
-                    type="number"
-                    tick={{ fill: "oklch(0.3 0.02 90)", fontSize: 9 }}
-                    axisLine={{ stroke: "oklch(0.18 0.03 255)" }}
-                    tickLine={false}
-                    tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
-                  />
-                  <YAxis
-                    type="category"
-                    dataKey="name"
-                    tick={{ fill: "oklch(0.48 0.02 90)", fontSize: 9 }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={60}
-                  />
-                  <Tooltip
-                    content={<CustomTooltip />}
-                    cursor={{ fill: "oklch(0.78 0.165 85 / 0.05)" }}
-                  />
-                  <Bar dataKey="purse" radius={[0, 2, 2, 0]}>
-                    {chartData.map((entry) => (
-                      <Cell
-                        key={`cell-${entry.id}`}
-                        fill={
-                          auctionState?.leadingTeamId !== undefined &&
-                          BigInt(entry.id) === auctionState.leadingTeamId
-                            ? "oklch(0.78 0.165 85)"
-                            : "oklch(0.3 0.07 255)"
-                        }
+                  <div
+                    className="font-broadcast text-xs tracking-widest mb-1"
+                    style={{ color: "oklch(0.72 0.22 35)" }}
+                  >
+                    SOLD TO
+                  </div>
+                  {/* Team logo */}
+                  {(() => {
+                    const tLogoUrl = teamLogos[soldTeamDisplay.teamId] ?? "";
+                    const tInitials = soldTeamDisplay.teamName
+                      .split(" ")
+                      .map((w) => w[0])
+                      .join("")
+                      .slice(0, 2)
+                      .toUpperCase();
+                    return tLogoUrl ? (
+                      <img
+                        src={tLogoUrl}
+                        alt={soldTeamDisplay.teamName}
+                        style={{
+                          width: "56px",
+                          height: "56px",
+                          borderRadius: "50%",
+                          objectFit: "cover",
+                          border: "2px solid oklch(0.78 0.165 85 / 0.7)",
+                          boxShadow: "0 0 20px oklch(0.78 0.165 85 / 0.4)",
+                        }}
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = "none";
+                        }}
                       />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            )}
+                    ) : (
+                      <div
+                        style={{
+                          width: "56px",
+                          height: "56px",
+                          borderRadius: "50%",
+                          background: "oklch(0.16 0.05 255)",
+                          border: "2px solid oklch(0.78 0.165 85 / 0.5)",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: "18px",
+                          fontWeight: 700,
+                          color: "oklch(0.78 0.165 85)",
+                          fontFamily: '"Bricolage Grotesque", sans-serif',
+                        }}
+                      >
+                        {tInitials}
+                      </div>
+                    );
+                  })()}
+                  <div
+                    className="font-broadcast tracking-wide text-center"
+                    style={{
+                      color: "oklch(0.92 0.02 90)",
+                      fontSize: "13px",
+                    }}
+                  >
+                    {soldTeamDisplay.teamName}
+                  </div>
+                  <div
+                    className="font-digital px-3 py-1"
+                    style={{
+                      fontSize: "16px",
+                      color: "oklch(0.08 0.025 265)",
+                      background:
+                        "linear-gradient(135deg, oklch(0.88 0.18 88), oklch(0.78 0.165 85))",
+                      fontWeight: 700,
+                    }}
+                  >
+                    {soldTeamDisplay.soldPrice.toLocaleString()} PTS
+                  </div>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="chart"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  {teams.length > 0 && (
+                    <ResponsiveContainer
+                      width="100%"
+                      height={layout.chartHeight}
+                    >
+                      <BarChart
+                        data={chartData}
+                        layout="vertical"
+                        margin={{ top: 0, right: 10, left: 0, bottom: 0 }}
+                      >
+                        <XAxis
+                          type="number"
+                          tick={{ fill: "oklch(0.3 0.02 90)", fontSize: 9 }}
+                          axisLine={{ stroke: "oklch(0.18 0.03 255)" }}
+                          tickLine={false}
+                          tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`}
+                        />
+                        <YAxis
+                          type="category"
+                          dataKey="name"
+                          tick={{
+                            fill: "oklch(0.48 0.02 90)",
+                            fontSize: 9,
+                          }}
+                          axisLine={false}
+                          tickLine={false}
+                          width={60}
+                        />
+                        <Tooltip
+                          content={<CustomTooltip />}
+                          cursor={{ fill: "oklch(0.78 0.165 85 / 0.05)" }}
+                        />
+                        <Bar dataKey="purse" radius={[0, 2, 2, 0]}>
+                          {chartData.map((entry) => (
+                            <Cell
+                              key={`cell-${entry.id}`}
+                              fill={
+                                auctionState?.leadingTeamId !== undefined &&
+                                BigInt(entry.id) === auctionState.leadingTeamId
+                                  ? "oklch(0.78 0.165 85)"
+                                  : "oklch(0.3 0.07 255)"
+                              }
+                            />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
           {/* Footer */}
@@ -893,14 +910,6 @@ export default function LivePage() {
           </div>
         </div>
       </div>
-
-      {/* SOLD Overlay */}
-      <SoldOverlay
-        show={soldOverlay}
-        teamName={soldInfo.teamName}
-        playerName={soldInfo.playerName}
-        soldPrice={soldInfo.soldPrice}
-      />
     </div>
   );
 }

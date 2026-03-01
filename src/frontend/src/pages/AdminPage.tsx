@@ -2,7 +2,9 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   AlertCircle,
   CheckCircle,
+  ChevronDown,
   ChevronLeft,
+  ChevronUp,
   Coins,
   Download,
   Edit3,
@@ -649,6 +651,179 @@ function TeamCard({
           <Edit3 size={11} />
         </button>
       </div>
+    </div>
+  );
+}
+
+// ─── Remaining Players Panel ───────────────────────────────────────────────────
+function RemainingPlayersPanel({
+  players,
+  auctionActive,
+  onSelect,
+}: {
+  players: Player[];
+  auctionActive: boolean;
+  onSelect: (id: bigint) => void;
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const upcomingPlayers = players.filter((p) => p.status === "upcoming");
+  if (upcomingPlayers.length === 0) return null;
+
+  const byCategory: Record<string, Player[]> = {};
+  for (const p of upcomingPlayers) {
+    if (!byCategory[p.category]) byCategory[p.category] = [];
+    byCategory[p.category].push(p);
+  }
+
+  const CATEGORY_COLORS_LOCAL: Record<string, string> = {
+    Batsman: "oklch(0.7 0.15 140)",
+    Bowler: "oklch(0.65 0.18 25)",
+    Allrounder: "oklch(0.78 0.165 85)",
+  };
+
+  return (
+    <div
+      style={{
+        background: "oklch(0.12 0.025 255)",
+        border: "1px solid oklch(0.25 0.03 255)",
+      }}
+    >
+      {/* Header toggle */}
+      <button
+        type="button"
+        onClick={() => setIsExpanded((v) => !v)}
+        className="w-full flex items-center justify-between px-3 py-2.5"
+        style={{
+          borderBottom: isExpanded ? "1px solid oklch(0.22 0.025 255)" : "none",
+        }}
+      >
+        <div className="flex items-center gap-2">
+          <Users size={12} style={{ color: "oklch(0.65 0.18 25)" }} />
+          <span
+            className="font-broadcast text-xs tracking-widest"
+            style={{ color: "oklch(0.65 0.18 25)" }}
+          >
+            REMAINING PLAYERS
+          </span>
+          <span
+            className="font-digital text-xs px-1.5 py-0.5"
+            style={{
+              background: "oklch(0.65 0.18 25 / 0.12)",
+              border: "1px solid oklch(0.65 0.18 25 / 0.3)",
+              color: "oklch(0.75 0.15 25)",
+            }}
+          >
+            {upcomingPlayers.length}
+          </span>
+        </div>
+        <div style={{ color: "oklch(0.42 0.02 90)" }}>
+          {isExpanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+        </div>
+      </button>
+
+      <AnimatePresence>
+        {isExpanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            style={{ overflow: "hidden" }}
+          >
+            <div className="p-2.5 space-y-3 max-h-72 overflow-y-auto">
+              {Object.entries(byCategory).map(([category, catPlayers]) => {
+                const color =
+                  CATEGORY_COLORS_LOCAL[category] ?? "oklch(0.55 0.02 90)";
+                return (
+                  <div key={category}>
+                    <div
+                      className="text-xs font-broadcast tracking-widest mb-1.5 pb-1"
+                      style={{
+                        color,
+                        borderBottom: `1px solid ${color}28`,
+                      }}
+                    >
+                      {category.toUpperCase()} ({catPlayers.length})
+                    </div>
+                    <div className="space-y-1">
+                      {catPlayers.map((player) => (
+                        <div
+                          key={String(player.id)}
+                          className="flex items-center gap-2 px-2 py-1.5"
+                          style={{
+                            background: "oklch(0.09 0.02 255)",
+                            border: `1px solid ${color}1a`,
+                          }}
+                        >
+                          {/* Tiny photo */}
+                          <div
+                            className="w-7 h-9 overflow-hidden flex-shrink-0 flex items-center justify-center"
+                            style={{
+                              background: "oklch(0.14 0.04 255)",
+                              border: "1px solid oklch(0.22 0.025 255)",
+                            }}
+                          >
+                            {player.imageUrl ? (
+                              <img
+                                src={player.imageUrl}
+                                alt={player.name}
+                                className="w-full h-full object-cover"
+                                onError={(e) => {
+                                  (e.target as HTMLImageElement).style.display =
+                                    "none";
+                                }}
+                              />
+                            ) : (
+                              <span
+                                className="font-broadcast"
+                                style={{ color, fontSize: "10px" }}
+                              >
+                                {player.name.charAt(0)}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div
+                              className="font-broadcast truncate"
+                              style={{
+                                color: "oklch(0.88 0.02 90)",
+                                fontSize: "10px",
+                              }}
+                              title={player.name}
+                            >
+                              {player.name}
+                            </div>
+                            <div
+                              className="font-digital"
+                              style={{ color, fontSize: "9px" }}
+                            >
+                              {Number(player.basePrice).toLocaleString()} pts
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => onSelect(player.id)}
+                            disabled={auctionActive}
+                            className="px-1.5 py-1 text-xs font-broadcast tracking-wider hover:opacity-80 disabled:opacity-30 disabled:cursor-not-allowed flex-shrink-0"
+                            style={{
+                              background: "oklch(0.78 0.165 85 / 0.1)",
+                              border: "1px solid oklch(0.78 0.165 85 / 0.25)",
+                              color: "oklch(0.78 0.165 85)",
+                              fontSize: "9px",
+                            }}
+                          >
+                            SELECT
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -1391,7 +1566,7 @@ function AdminPanel() {
                 {soldPlayers.length}/{players.length} sold
               </span>
             </div>
-            <div className="overflow-y-auto max-h-80">
+            <div className="overflow-y-auto max-h-52">
               {upcomingPlayers.map((player) => (
                 <div
                   key={String(player.id)}
@@ -1481,6 +1656,13 @@ function AdminPanel() {
               )}
             </div>
           </div>
+
+          {/* Remaining / Re-queue Players Panel */}
+          <RemainingPlayersPanel
+            players={players}
+            auctionActive={effectiveIsActive}
+            onSelect={handleSelectPlayer}
+          />
         </div>
 
         {/* ─── CENTER COLUMN ────────────────────────────────────────── */}

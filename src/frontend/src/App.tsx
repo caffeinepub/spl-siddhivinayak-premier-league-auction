@@ -12,6 +12,7 @@ import LandingPage from "./pages/LandingPage";
 import LivePage from "./pages/LivePage";
 import SettingsPage from "./pages/SettingsPage";
 import SquadsPage from "./pages/SquadsPage";
+import TeamPage from "./pages/TeamPage";
 
 // Root route with Toaster
 const rootRoute = createRootRoute({
@@ -80,12 +81,19 @@ const squadsRoute = createRoute({
   component: SquadsPage,
 });
 
+const teamRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/team/$teamId",
+  component: TeamPage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   adminRoute,
   liveRoute,
   settingsRoute,
   squadsRoute,
+  teamRoute,
 ]);
 
 const router = createRouter({ routeTree });
