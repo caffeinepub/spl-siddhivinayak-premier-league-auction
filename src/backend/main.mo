@@ -5,10 +5,10 @@ import Nat "mo:core/Nat";
 import List "mo:core/List";
 import Array "mo:core/Array";
 import Iter "mo:core/Iter";
-import Migration "migration";
+
 
 // Apply the data migration from an earlier version in the `with` clause
-(with migration = Migration.run)
+
 actor {
   include MixinStorage();
 

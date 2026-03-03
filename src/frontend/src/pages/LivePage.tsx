@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Player, Team } from "../backend.d";
 import { useActor } from "../hooks/useActor";
 import { useAuctionData } from "../hooks/useAuctionData";
+import { IDB_CHANGE_EVENT, idbStore } from "../idbStore";
 import {
   applySettingsToLocalStorage,
   loadSettingsFromBackend,
@@ -664,24 +665,121 @@ export default function LivePage() {
     return () => clearInterval(interval);
   }, [actor, applySettingsToState]);
 
-  // Refresh layout + colors + league + logos from localStorage periodically
-  // (same-device tab sync and manual setting changes still use this path)
+  // Refresh layout + colors + league + logos from IDB (primary) + localStorage (fallback)
+  // IDB is the canonical store — Settings always writes there first.
+  // localStorage is kept as fallback for backend-synced projector devices.
   useEffect(() => {
-    const refresh = () => {
-      setLayout(getLiveLayout());
-      setColors(getLiveColors());
-      setLeague(getLeagueSettings());
-      setTeamLogos(getTeamLogos());
-      setOwnerPhotos(getOwnerPhotos());
-      setIconPhotos(getIconPhotos());
+    const refreshFromIdb = async () => {
+      try {
+        const [logosRaw, ownerRaw, iconRaw, leagueRaw, layoutRaw, colorsRaw] =
+          await Promise.all([
+            idbStore.getSetting("spl_team_logos"),
+            idbStore.getSetting("spl_owner_photos"),
+            idbStore.getSetting("spl_icon_photos"),
+            idbStore.getSetting("spl_league_settings"),
+            idbStore.getSetting("spl_live_layout"),
+            idbStore.getSetting("spl_live_colors"),
+          ]);
+
+        const logos = logosRaw
+          ? (JSON.parse(logosRaw) as Record<string, string>)
+          : getTeamLogos();
+        const owners = ownerRaw
+          ? (JSON.parse(ownerRaw) as Record<string, string>)
+          : getOwnerPhotos();
+        const icons = iconRaw
+          ? (JSON.parse(iconRaw) as Record<string, string>)
+          : getIconPhotos();
+
+        setTeamLogos((prev) => {
+          const hasChanged = JSON.stringify(prev) !== JSON.stringify(logos);
+          return hasChanged ? logos : prev;
+        });
+        setOwnerPhotos((prev) => {
+          const hasChanged = JSON.stringify(prev) !== JSON.stringify(owners);
+          return hasChanged ? owners : prev;
+        });
+        setIconPhotos((prev) => {
+          const hasChanged = JSON.stringify(prev) !== JSON.stringify(icons);
+          return hasChanged ? icons : prev;
+        });
+
+        // League settings
+        if (leagueRaw) {
+          try {
+            const leagueParsed = JSON.parse(leagueRaw) as typeof league;
+            setLeague((prev) => {
+              const hasChanged =
+                JSON.stringify(prev) !== JSON.stringify(leagueParsed);
+              return hasChanged ? leagueParsed : prev;
+            });
+          } catch {
+            /* ignore */
+          }
+        }
+
+        // Layout
+        if (layoutRaw) {
+          try {
+            const layoutParsed = JSON.parse(layoutRaw) as LiveLayoutConfig;
+            setLayout((prev) => {
+              const hasChanged =
+                JSON.stringify(prev) !== JSON.stringify(layoutParsed);
+              return hasChanged
+                ? { ...DEFAULT_LIVE_LAYOUT, ...layoutParsed }
+                : prev;
+            });
+          } catch {
+            /* ignore */
+          }
+        }
+
+        // Colors
+        if (colorsRaw) {
+          try {
+            const colorsParsed = JSON.parse(colorsRaw) as LiveColorTheme;
+            setColors((prev) => {
+              const hasChanged =
+                JSON.stringify(prev) !== JSON.stringify(colorsParsed);
+              return hasChanged
+                ? { ...DEFAULT_LIVE_COLORS, ...colorsParsed }
+                : prev;
+            });
+          } catch {
+            /* ignore */
+          }
+        }
+      } catch {
+        // IDB not available — fall back to localStorage
+        setLayout(getLiveLayout());
+        setColors(getLiveColors());
+        setLeague(getLeagueSettings());
+        setTeamLogos(getTeamLogos());
+        setOwnerPhotos(getOwnerPhotos());
+        setIconPhotos(getIconPhotos());
+      }
     };
-    const interval = setInterval(refresh, 3000);
-    // Also refresh instantly when Settings saves in another tab on the same device
-    window.addEventListener("storage", refresh);
+
+    // Run immediately on mount
+    void refreshFromIdb();
+
+    // Poll every 3 seconds
+    const interval = setInterval(() => void refreshFromIdb(), 3000);
+
+    // React to IDB changes fired by Settings (same-device, same or different tab)
+    const onIdbChange = () => void refreshFromIdb();
+    window.addEventListener(IDB_CHANGE_EVENT, onIdbChange);
+
+    // Also react to localStorage storage events (cross-tab fallback)
+    const onStorage = () => void refreshFromIdb();
+    window.addEventListener("storage", onStorage);
+
     return () => {
       clearInterval(interval);
-      window.removeEventListener("storage", refresh);
+      window.removeEventListener(IDB_CHANGE_EVENT, onIdbChange);
+      window.removeEventListener("storage", onStorage);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const currentPlayer = auctionState?.currentPlayerId

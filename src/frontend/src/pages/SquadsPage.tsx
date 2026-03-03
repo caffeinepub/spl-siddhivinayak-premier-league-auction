@@ -48,129 +48,198 @@ function HammerOverlay({
   data: HammerAnimData | null;
   visible: boolean;
 }) {
+  if (!data) return null;
+
+  // ── SOLD animation ────────────────────────────────────────────────────────
+  if (data.type === "sold") {
+    return (
+      <AnimatePresence>
+        {visible && (
+          <motion.div
+            key="hammer-sold"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none"
+          >
+            <div
+              className="absolute inset-0"
+              style={{ background: "oklch(0.04 0.02 265 / 0.8)" }}
+            />
+            <motion.div
+              initial={{ scale: 0.5, opacity: 0, rotate: -15 }}
+              animate={{ scale: 1, opacity: 1, rotate: 0 }}
+              exit={{ scale: 1.2, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 350, damping: 20 }}
+              className="relative z-10 flex flex-col items-center gap-5 px-12 py-10"
+              style={{
+                background: "oklch(0.1 0.04 255 / 0.97)",
+                border: "3px solid oklch(0.78 0.165 85)",
+                boxShadow: "0 0 80px oklch(0.78 0.165 85 / 0.5)",
+              }}
+            >
+              {/* Hammer emoji */}
+              <motion.div
+                animate={{ rotate: [0, -30, 10, -15, 5, 0] }}
+                transition={{ duration: 0.6, delay: 0.1 }}
+                style={{ fontSize: 72, lineHeight: 1 }}
+              >
+                🔨
+              </motion.div>
+
+              {/* SOLD! text */}
+              <motion.div
+                animate={{ scale: [1, 1.1, 1] }}
+                transition={{
+                  duration: 0.5,
+                  repeat: Number.POSITIVE_INFINITY,
+                  repeatDelay: 1,
+                }}
+                className="font-broadcast font-black tracking-widest"
+                style={{
+                  fontSize: 56,
+                  color: "oklch(0.78 0.165 85)",
+                  textShadow: "0 0 40px oklch(0.78 0.165 85 / 0.7)",
+                }}
+              >
+                SOLD!
+              </motion.div>
+
+              {/* Player name */}
+              <div
+                className="font-broadcast text-2xl tracking-wider"
+                style={{ color: "oklch(0.88 0.015 90)" }}
+              >
+                {data.playerName.toUpperCase()}
+              </div>
+
+              {/* Team info */}
+              {data.teamName && (
+                <div className="flex items-center gap-3">
+                  {data.teamLogoUrl ? (
+                    <img
+                      src={data.teamLogoUrl}
+                      alt={data.teamName}
+                      className="rounded-full"
+                      style={{
+                        width: 48,
+                        height: 48,
+                        objectFit: "cover",
+                        border: "2px solid oklch(0.78 0.165 85 / 0.6)",
+                      }}
+                    />
+                  ) : (
+                    <div
+                      className="rounded-full flex items-center justify-center font-broadcast font-black text-xs"
+                      style={{
+                        width: 48,
+                        height: 48,
+                        background: "oklch(0.18 0.06 255)",
+                        border: "2px solid oklch(0.78 0.165 85 / 0.5)",
+                        color: "oklch(0.78 0.165 85)",
+                      }}
+                    >
+                      {teamInitials(data.teamName).slice(0, 2)}
+                    </div>
+                  )}
+                  <div>
+                    <div
+                      className="font-broadcast text-xl tracking-wider"
+                      style={{ color: "oklch(0.88 0.12 82)" }}
+                    >
+                      {data.teamName.toUpperCase()}
+                    </div>
+                    {data.soldPrice != null && (
+                      <div
+                        className="font-digital text-lg"
+                        style={{ color: "oklch(0.78 0.165 85)" }}
+                      >
+                        {fmt(data.soldPrice)} PTS
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    );
+  }
+
+  // ── UNSOLD animation ──────────────────────────────────────────────────────
   return (
     <AnimatePresence>
-      {visible && data && (
+      {visible && (
         <motion.div
-          key="hammer"
+          key="hammer-unsold"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none"
         >
+          {/* Dark red-tinted background */}
           <div
             className="absolute inset-0"
-            style={{ background: "oklch(0.04 0.02 265 / 0.8)" }}
+            style={{ background: "oklch(0.06 0.04 20 / 0.85)" }}
           />
+
           <motion.div
-            initial={{ scale: 0.5, opacity: 0, rotate: -15 }}
-            animate={{ scale: 1, opacity: 1, rotate: 0 }}
-            exit={{ scale: 1.2, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 350, damping: 20 }}
+            initial={{ y: -80, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 80, opacity: 0, scale: 0.9 }}
+            transition={{ type: "spring", stiffness: 280, damping: 22 }}
             className="relative z-10 flex flex-col items-center gap-5 px-12 py-10"
             style={{
-              background:
-                data.type === "sold"
-                  ? "oklch(0.1 0.04 255 / 0.97)"
-                  : "oklch(0.09 0.03 265 / 0.97)",
-              border:
-                data.type === "sold"
-                  ? "3px solid oklch(0.78 0.165 85)"
-                  : "3px solid oklch(0.45 0.02 90)",
+              background: "oklch(0.08 0.04 20 / 0.97)",
+              border: "3px solid oklch(0.55 0.22 25)",
               boxShadow:
-                data.type === "sold"
-                  ? "0 0 80px oklch(0.78 0.165 85 / 0.5)"
-                  : "0 0 40px oklch(0.3 0.02 90 / 0.3)",
+                "0 0 60px oklch(0.55 0.22 25 / 0.45), 0 0 120px oklch(0.55 0.22 25 / 0.2)",
             }}
           >
-            {/* Hammer emoji */}
+            {/* X cross icon + shake animation */}
             <motion.div
-              animate={{ rotate: [0, -30, 10, -15, 5, 0] }}
-              transition={{ duration: 0.6, delay: 0.1 }}
+              animate={{ x: [0, -8, 8, -6, 6, -3, 3, 0] }}
+              transition={{ duration: 0.5, delay: 0.15 }}
               style={{ fontSize: 72, lineHeight: 1 }}
             >
-              🔨
+              ❌
             </motion.div>
 
-            {/* Status */}
+            {/* UNSOLD text with red flicker */}
             <motion.div
-              animate={{ scale: [1, 1.1, 1] }}
+              animate={{ opacity: [1, 0.6, 1, 0.7, 1] }}
               transition={{
-                duration: 0.5,
+                duration: 0.8,
                 repeat: Number.POSITIVE_INFINITY,
-                repeatDelay: 1,
+                repeatDelay: 0.7,
               }}
               className="font-broadcast font-black tracking-widest"
               style={{
                 fontSize: 56,
-                color:
-                  data.type === "sold"
-                    ? "oklch(0.78 0.165 85)"
-                    : "oklch(0.55 0.02 90)",
+                color: "oklch(0.62 0.24 25)",
                 textShadow:
-                  data.type === "sold"
-                    ? "0 0 40px oklch(0.78 0.165 85 / 0.7)"
-                    : "none",
+                  "0 0 30px oklch(0.62 0.24 25 / 0.8), 0 0 60px oklch(0.55 0.22 25 / 0.4)",
               }}
             >
-              {data.type === "sold" ? "SOLD!" : "UNSOLD"}
+              UNSOLD
             </motion.div>
 
             {/* Player name */}
             <div
               className="font-broadcast text-2xl tracking-wider"
-              style={{ color: "oklch(0.88 0.015 90)" }}
+              style={{ color: "oklch(0.72 0.03 90)" }}
             >
               {data.playerName.toUpperCase()}
             </div>
 
-            {/* Team info (sold only) */}
-            {data.type === "sold" && data.teamName && (
-              <div className="flex items-center gap-3">
-                {data.teamLogoUrl ? (
-                  <img
-                    src={data.teamLogoUrl}
-                    alt={data.teamName}
-                    className="rounded-full"
-                    style={{
-                      width: 48,
-                      height: 48,
-                      objectFit: "cover",
-                      border: "2px solid oklch(0.78 0.165 85 / 0.6)",
-                    }}
-                  />
-                ) : (
-                  <div
-                    className="rounded-full flex items-center justify-center font-broadcast font-black text-xs"
-                    style={{
-                      width: 48,
-                      height: 48,
-                      background: "oklch(0.18 0.06 255)",
-                      border: "2px solid oklch(0.78 0.165 85 / 0.5)",
-                      color: "oklch(0.78 0.165 85)",
-                    }}
-                  >
-                    {teamInitials(data.teamName).slice(0, 2)}
-                  </div>
-                )}
-                <div>
-                  <div
-                    className="font-broadcast text-xl tracking-wider"
-                    style={{ color: "oklch(0.88 0.12 82)" }}
-                  >
-                    {data.teamName.toUpperCase()}
-                  </div>
-                  {data.soldPrice != null && (
-                    <div
-                      className="font-digital text-lg"
-                      style={{ color: "oklch(0.78 0.165 85)" }}
-                    >
-                      {fmt(data.soldPrice)} PTS
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
+            {/* "No bids received" label */}
+            <div
+              className="font-digital text-sm tracking-widest uppercase"
+              style={{ color: "oklch(0.45 0.08 25)" }}
+            >
+              No bids received
+            </div>
           </motion.div>
         </motion.div>
       )}
