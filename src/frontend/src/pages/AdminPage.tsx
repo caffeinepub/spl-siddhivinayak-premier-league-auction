@@ -1006,6 +1006,27 @@ function UnsoldPlayersPanel({
 
 // ─── Connecting Screen ─────────────────────────────────────────────────────────
 function ConnectingScreen({ onRetry }: { onRetry: () => void }) {
+  const [dots, setDots] = useState(".");
+  const [elapsed, setElapsed] = useState(0);
+
+  // Animate the dots
+  useEffect(() => {
+    const t = setInterval(
+      () => setDots((d) => (d.length >= 3 ? "." : `${d}.`)),
+      500,
+    );
+    return () => clearInterval(t);
+  }, []);
+
+  // Auto-retry every 4 seconds
+  useEffect(() => {
+    const t = setInterval(() => {
+      setElapsed((e) => e + 4);
+      onRetry();
+    }, 4000);
+    return () => clearInterval(t);
+  }, [onRetry]);
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center broadcast-overlay">
       <div
@@ -1037,11 +1058,17 @@ function ConnectingScreen({ onRetry }: { onRetry: () => void }) {
           className="font-broadcast text-xl tracking-wider mb-2"
           style={{ color: "oklch(0.78 0.165 85)" }}
         >
-          CONNECTING…
+          CONNECTING{dots}
         </h2>
-        <p className="text-sm mb-6" style={{ color: "oklch(0.42 0.02 90)" }}>
+        <p className="text-sm mb-2" style={{ color: "oklch(0.42 0.02 90)" }}>
           Establishing connection to the auction network.
         </p>
+        {elapsed > 8 && (
+          <p className="text-xs mb-4" style={{ color: "oklch(0.38 0.02 90)" }}>
+            This is taking longer than usual — the server may be waking up.
+            Please wait{dots}
+          </p>
+        )}
         <button
           type="button"
           onClick={onRetry}
@@ -1493,12 +1520,12 @@ function AdminPanel() {
   const showUnsoldButton =
     effectiveIsActive && effectiveCurrentPlayerId !== null;
 
-  // Show connecting screen while actor is initializing
-  if ((actorFetching || !actor) && teams.length === 0) {
-    return <ConnectingScreen onRetry={() => window.location.reload()} />;
+  // Show connecting screen while actor is initializing OR while first data load is pending
+  if ((actorFetching || !actor || isLoading) && teams.length === 0) {
+    return <ConnectingScreen onRetry={refetch} />;
   }
 
-  // Full-page error state — auto-retries every 2s via useAuctionData hook
+  // Full-page error state — auto-retries every 1s via useAuctionData hook
   if (error && !isLoading && teams.length === 0) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center broadcast-overlay">

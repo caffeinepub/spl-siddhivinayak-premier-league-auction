@@ -1,4 +1,4 @@
-import { Crown, Star, Users, X } from "lucide-react";
+import { Crown, Loader2, Star, Users, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Player, Team } from "../backend.d";
@@ -764,25 +764,31 @@ export default function LivePage() {
     : "oklch(0.55 0.02 90)";
   const rp = layout.rightPanelWidth;
 
+  // Auto-retry every 3s when error with no data
+  useEffect(() => {
+    if (!error || auctionState) return;
+    const t = setInterval(() => refetch(), 3000);
+    return () => clearInterval(t);
+  }, [error, auctionState, refetch]);
+
   if (error && !auctionState) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center broadcast-overlay">
         <div className="flex flex-col items-center gap-6 px-8 text-center">
           <motion.div
-            animate={{ scale: [1, 1.15, 1] }}
-            transition={{ duration: 1.5, repeat: Number.POSITIVE_INFINITY }}
+            animate={{ rotate: 360 }}
+            transition={{
+              duration: 1.5,
+              repeat: Number.POSITIVE_INFINITY,
+              ease: "linear",
+            }}
             className="w-14 h-14 rounded-full flex items-center justify-center"
             style={{
               background: "oklch(0.78 0.165 85 / 0.15)",
               border: "2px solid oklch(0.78 0.165 85 / 0.4)",
             }}
           >
-            <span
-              className="font-broadcast text-2xl"
-              style={{ color: "oklch(0.78 0.165 85)" }}
-            >
-              !
-            </span>
+            <Loader2 size={24} style={{ color: "oklch(0.78 0.165 85)" }} />
           </motion.div>
           <div>
             <p
@@ -792,7 +798,7 @@ export default function LivePage() {
               RECONNECTING...
             </p>
             <p className="text-sm" style={{ color: "oklch(0.55 0.02 90)" }}>
-              Connection lost. Retrying automatically every 2 seconds.
+              Server is waking up. Retrying automatically...
             </p>
           </div>
           <button

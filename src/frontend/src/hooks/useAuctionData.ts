@@ -20,10 +20,10 @@ export interface AuctionData {
 }
 
 // Show error UI after this many consecutive failures
-const MAX_CONSECUTIVE_ERRORS = 5;
+const MAX_CONSECUTIVE_ERRORS = 3;
 // Force-recreate the ICP actor after this many failures
 // (covers the "canister is stopped" case)
-const ACTOR_RECREATE_THRESHOLD = 3;
+const ACTOR_RECREATE_THRESHOLD = 2;
 
 export function useAuctionData(intervalMs = 3000): AuctionData {
   const { actor, isFetching } = useActor();
@@ -32,7 +32,8 @@ export function useAuctionData(intervalMs = 3000): AuctionData {
   const [teams, setTeams] = useState<Team[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
   const [dashboard, setDashboard] = useState<Dashboard | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  // Start as false — actor initialisation itself is shown via ConnectingScreen
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -72,11 +73,16 @@ export function useAuctionData(intervalMs = 3000): AuctionData {
   }, [queryClient]);
 
   const fetchAll = useCallback(async () => {
-    if (!actor) return;
+    if (!actor) {
+      // Actor not ready yet — keep isLoading false so UI can show connecting state
+      return;
+    }
     if (Date.now() < pausedUntilRef.current) return;
     if (isFetchingDataRef.current) return;
 
     isFetchingDataRef.current = true;
+    // Only show spinner on the very first fetch (teams not yet loaded)
+    if (mountedRef.current) setIsLoading(true);
     try {
       // Parallel fetch — total wait = slowest single call
       const [state, teamsData, playersData, dashData] = await Promise.all([
@@ -130,17 +136,18 @@ export function useAuctionData(intervalMs = 3000): AuctionData {
           err instanceof Error ? err.message : "Failed to connect to server";
         setError(msg);
 
-        // Short fixed backoff (2s) — recover quickly when canister comes back
+        // Short fixed backoff (1s) — recover quickly when canister comes back
         clearTimers();
         retryTimerRef.current = setTimeout(() => {
           if (!mountedRef.current) return;
           isFetchingDataRef.current = false;
+          tryRecreateActor(); // Force fresh actor on each retry
           fetchAll().then(() => {
             if (mountedRef.current && !intervalRef.current) {
               intervalRef.current = setInterval(fetchAll, intervalMs);
             }
           });
-        }, 2000);
+        }, 1000);
       }
     } finally {
       if (mountedRef.current) setIsLoading(false);
@@ -198,6 +205,7 @@ export function useAuctionData(intervalMs = 3000): AuctionData {
   const refetch = useCallback(async () => {
     consecutiveErrorsRef.current = 0;
     setError(null);
+    setIsLoading(true);
     isFetchingDataRef.current = false;
     clearTimers();
     tryRecreateActor();
