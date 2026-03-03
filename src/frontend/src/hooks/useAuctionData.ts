@@ -1,3 +1,4 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AuctionState, Dashboard, Player, Team } from "../backend.d";
 import {
@@ -18,10 +19,15 @@ export interface AuctionData {
   pausePolling: (ms: number) => void;
 }
 
-const MAX_CONSECUTIVE_ERRORS = 8;
+// Show error UI after this many consecutive failures
+const MAX_CONSECUTIVE_ERRORS = 5;
+// Force-recreate the ICP actor after this many failures
+// (covers the "canister is stopped" case)
+const ACTOR_RECREATE_THRESHOLD = 3;
 
 export function useAuctionData(intervalMs = 3000): AuctionData {
   const { actor, isFetching } = useActor();
+  const queryClient = useQueryClient();
   const [auctionState, setAuctionState] = useState<AuctionState | null>(null);
   const [teams, setTeams] = useState<Team[]>([]);
   const [players, setPlayers] = useState<Player[]>([]);
@@ -37,6 +43,8 @@ export function useAuctionData(intervalMs = 3000): AuctionData {
   const mountedRef = useRef(true);
   // Only load settings once per actor instance to avoid expensive polling
   const settingsSyncedRef = useRef(false);
+  // Rate-limit actor recreations to avoid a tight loop
+  const lastActorRecreateRef = useRef<number>(0);
 
   const clearTimers = useCallback(() => {
     if (intervalRef.current) {
@@ -48,6 +56,20 @@ export function useAuctionData(intervalMs = 3000): AuctionData {
       retryTimerRef.current = null;
     }
   }, []);
+
+  /**
+   * Force-recreate the actor by invalidating its react-query cache entry.
+   * This handles the "canister is stopped" case where the existing actor
+   * object is valid but the canister on the network is down/restarted.
+   * Rate-limited to once per 10 seconds.
+   */
+  const tryRecreateActor = useCallback(() => {
+    const now = Date.now();
+    if (now - lastActorRecreateRef.current < 10000) return;
+    lastActorRecreateRef.current = now;
+    queryClient.invalidateQueries({ queryKey: ["actor"] });
+    queryClient.refetchQueries({ queryKey: ["actor"] });
+  }, [queryClient]);
 
   const fetchAll = useCallback(async () => {
     if (!actor) return;
@@ -94,17 +116,22 @@ export function useAuctionData(intervalMs = 3000): AuctionData {
       if (!mountedRef.current) return;
       consecutiveErrorsRef.current += 1;
 
+      // At ACTOR_RECREATE_THRESHOLD failures, force a new actor to be created.
+      // The canister may have been restarted on the network.
+      if (
+        consecutiveErrorsRef.current > 0 &&
+        consecutiveErrorsRef.current % ACTOR_RECREATE_THRESHOLD === 0
+      ) {
+        tryRecreateActor();
+      }
+
       if (consecutiveErrorsRef.current >= MAX_CONSECUTIVE_ERRORS) {
         const msg =
           err instanceof Error ? err.message : "Failed to connect to server";
         setError(msg);
 
-        // Exponential backoff capped at 15s
+        // Short fixed backoff (2s) — recover quickly when canister comes back
         clearTimers();
-        const backoffMs = Math.min(
-          3000 * (consecutiveErrorsRef.current - MAX_CONSECUTIVE_ERRORS + 1),
-          15000,
-        );
         retryTimerRef.current = setTimeout(() => {
           if (!mountedRef.current) return;
           isFetchingDataRef.current = false;
@@ -113,20 +140,41 @@ export function useAuctionData(intervalMs = 3000): AuctionData {
               intervalRef.current = setInterval(fetchAll, intervalMs);
             }
           });
-        }, backoffMs);
+        }, 2000);
       }
     } finally {
       if (mountedRef.current) setIsLoading(false);
       isFetchingDataRef.current = false;
     }
-  }, [actor, intervalMs, clearTimers]);
+  }, [actor, intervalMs, clearTimers, tryRecreateActor]);
 
   useEffect(() => {
     mountedRef.current = true;
+
+    // Recover when tab regains focus or device comes back online —
+    // covers the projector screen that was idle for a long time.
+    const onResume = () => {
+      if (!mountedRef.current) return;
+      tryRecreateActor();
+      consecutiveErrorsRef.current = 0;
+      setError(null);
+      isFetchingDataRef.current = false;
+      clearTimers();
+      fetchAll().then(() => {
+        if (mountedRef.current && !intervalRef.current) {
+          intervalRef.current = setInterval(fetchAll, intervalMs);
+        }
+      });
+    };
+    window.addEventListener("focus", onResume);
+    window.addEventListener("online", onResume);
+
     return () => {
       mountedRef.current = false;
+      window.removeEventListener("focus", onResume);
+      window.removeEventListener("online", onResume);
     };
-  }, []);
+  }, [clearTimers, fetchAll, intervalMs, tryRecreateActor]);
 
   useEffect(() => {
     if (!actor || isFetching) return;
@@ -152,11 +200,12 @@ export function useAuctionData(intervalMs = 3000): AuctionData {
     setError(null);
     isFetchingDataRef.current = false;
     clearTimers();
+    tryRecreateActor();
     await fetchAll();
     if (mountedRef.current && !intervalRef.current) {
       intervalRef.current = setInterval(fetchAll, intervalMs);
     }
-  }, [fetchAll, clearTimers, intervalMs]);
+  }, [fetchAll, clearTimers, intervalMs, tryRecreateActor]);
 
   return {
     auctionState,

@@ -1498,7 +1498,7 @@ function AdminPanel() {
     return <ConnectingScreen onRetry={() => window.location.reload()} />;
   }
 
-  // Full-page error state
+  // Full-page error state — auto-retries every 2s via useAuctionData hook
   if (error && !isLoading && teams.length === 0) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center broadcast-overlay">
@@ -1514,19 +1514,28 @@ function AdminPanel() {
               border: "1px solid oklch(0.62 0.22 25 / 0.3)",
             }}
           >
-            <AlertCircle size={28} style={{ color: "oklch(0.72 0.18 25)" }} />
+            <motion.div
+              animate={{ rotate: 360 }}
+              transition={{
+                duration: 2,
+                repeat: Number.POSITIVE_INFINITY,
+                ease: "linear",
+              }}
+            >
+              <RotateCcw size={28} style={{ color: "oklch(0.72 0.18 25)" }} />
+            </motion.div>
           </div>
           <h2
             className="font-broadcast text-xl tracking-wider mb-3"
             style={{ color: "oklch(0.72 0.18 25)" }}
           >
-            CONNECTION ERROR
+            RECONNECTING...
           </h2>
           <p className="text-sm mb-2" style={{ color: "oklch(0.52 0.02 90)" }}>
-            {error}
+            Connection lost. Retrying automatically every 2 seconds.
           </p>
           <p className="text-xs mb-6" style={{ color: "oklch(0.38 0.02 90)" }}>
-            The canister may be initialising or unreachable. Check your network.
+            If this persists, try the RETRY button or reload the page.
           </p>
           <div className="flex gap-3 justify-center">
             <button
@@ -1540,7 +1549,7 @@ function AdminPanel() {
               }}
             >
               <RotateCcw size={14} />
-              RETRY
+              RETRY NOW
             </button>
             <button
               type="button"

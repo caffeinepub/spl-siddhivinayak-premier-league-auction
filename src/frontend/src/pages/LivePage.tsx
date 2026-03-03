@@ -560,7 +560,8 @@ function SquadTeamRow({
 // ─── Main LivePage ────────────────────────────────────────────────────────────
 export default function LivePage() {
   // Use 1500ms polling on the live screen so bid updates appear within ~1.5s
-  const { auctionState, teams, players, isLoading } = useAuctionData(1500);
+  const { auctionState, teams, players, isLoading, error, refetch } =
+    useAuctionData(1500);
   // useActor for cross-device settings sync (projector device has empty localStorage)
   const { actor } = useActor();
 
@@ -762,6 +763,54 @@ export default function LivePage() {
     ? getCategoryColor(currentPlayer.category, colors)
     : "oklch(0.55 0.02 90)";
   const rp = layout.rightPanelWidth;
+
+  if (error && !auctionState) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center broadcast-overlay">
+        <div className="flex flex-col items-center gap-6 px-8 text-center">
+          <motion.div
+            animate={{ scale: [1, 1.15, 1] }}
+            transition={{ duration: 1.5, repeat: Number.POSITIVE_INFINITY }}
+            className="w-14 h-14 rounded-full flex items-center justify-center"
+            style={{
+              background: "oklch(0.78 0.165 85 / 0.15)",
+              border: "2px solid oklch(0.78 0.165 85 / 0.4)",
+            }}
+          >
+            <span
+              className="font-broadcast text-2xl"
+              style={{ color: "oklch(0.78 0.165 85)" }}
+            >
+              !
+            </span>
+          </motion.div>
+          <div>
+            <p
+              className="font-broadcast tracking-widest text-lg mb-2"
+              style={{ color: "oklch(0.78 0.165 85)" }}
+            >
+              RECONNECTING...
+            </p>
+            <p className="text-sm" style={{ color: "oklch(0.55 0.02 90)" }}>
+              Connection lost. Retrying automatically every 2 seconds.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={refetch}
+            className="px-6 py-2 font-broadcast tracking-widest text-sm transition-all"
+            style={{
+              background: "oklch(0.78 0.165 85 / 0.15)",
+              border: "1px solid oklch(0.78 0.165 85 / 0.5)",
+              color: "oklch(0.78 0.165 85)",
+            }}
+          >
+            RETRY NOW
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (isLoading && !auctionState) {
     return (
