@@ -1,6 +1,6 @@
 import { Copy, Crown, Star } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useOfflineAuctionData } from "../../hooks/useOfflineAuctionData";
 import type { OfflinePlayer, OfflineTeam } from "../../offlineStore";
 import {
@@ -445,9 +445,24 @@ function TeamRow({
 export default function OfflineSquadsPage() {
   const { teams, players, auctionState, isLoading } = useOfflineAuctionData();
   const league = getLeagueSettings();
-  const teamLogos = getTeamLogos();
-  const ownerPhotos = getOwnerPhotos();
-  const iconPhotos = getIconPhotos();
+  const [teamLogos, setTeamLogos] = useState(() => getTeamLogos());
+  const [ownerPhotos, setOwnerPhotos] = useState(() => getOwnerPhotos());
+  const [iconPhotos, setIconPhotos] = useState(() => getIconPhotos());
+
+  const refreshPhotos = useCallback(() => {
+    setTeamLogos(getTeamLogos());
+    setOwnerPhotos(getOwnerPhotos());
+    setIconPhotos(getIconPhotos());
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener("storage", refreshPhotos);
+    document.addEventListener("visibilitychange", refreshPhotos);
+    return () => {
+      window.removeEventListener("storage", refreshPhotos);
+      document.removeEventListener("visibilitychange", refreshPhotos);
+    };
+  }, [refreshPhotos]);
 
   const [hammerData, setHammerData] = useState<HammerAnimData | null>(null);
   const [hammerVisible, setHammerVisible] = useState(false);

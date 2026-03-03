@@ -452,6 +452,7 @@ function TeamCard({
   auctionActive,
   onPlaceBid,
   onEditPurse,
+  logoUrl,
 }: {
   team: OfflineTeam;
   isLeading: boolean;
@@ -459,6 +460,7 @@ function TeamCard({
   auctionActive: boolean;
   onPlaceBid: (teamId: number) => void;
   onEditPurse: (team: OfflineTeam) => void;
+  logoUrl: string;
 }) {
   const remainingSlots = 7 - team.numberOfPlayers;
   const purseRemaining = team.purseAmountLeft;
@@ -468,9 +470,6 @@ function TeamCard({
     !team.isTeamLocked &&
     auctionActive &&
     purseRemaining >= newBid + minRequired;
-
-  const teamLogos = getTeamLogos();
-  const logoUrl = teamLogos[String(team.id)] ?? "";
 
   const initials = team.name
     .split(" ")
@@ -1272,9 +1271,13 @@ function AdminPanel() {
 
   const [teamLogos, setTeamLogos] = useState(() => getTeamLogos());
   useEffect(() => {
-    const handler = () => setTeamLogos(getTeamLogos());
-    window.addEventListener("storage", handler);
-    return () => window.removeEventListener("storage", handler);
+    const refresh = () => setTeamLogos(getTeamLogos());
+    window.addEventListener("storage", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      window.removeEventListener("storage", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   }, []);
 
   const leadingTeamLogoUrl = leadingTeam
@@ -2018,6 +2021,7 @@ function AdminPanel() {
                   auctionActive={effectiveIsActive}
                   onPlaceBid={handlePlaceBid}
                   onEditPurse={setEditPurseTeam}
+                  logoUrl={teamLogos[String(team.id)] ?? ""}
                 />
               ))}
             </div>

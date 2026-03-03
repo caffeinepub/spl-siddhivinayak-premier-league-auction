@@ -60,6 +60,8 @@ export function getTeamLogos(): Record<string, string> {
 export function saveTeamLogos(logos: Record<string, string>) {
   try {
     localStorage.setItem(TEAM_LOGOS_KEY, JSON.stringify(logos));
+    // Notify same-tab listeners (storage event only fires cross-tab natively)
+    window.dispatchEvent(new StorageEvent("storage", { key: TEAM_LOGOS_KEY }));
   } catch (e) {
     if (e instanceof DOMException && e.name === "QuotaExceededError") {
       throw new Error("Storage full — try a smaller image (under 200KB)");
@@ -84,6 +86,9 @@ export function getOwnerPhotos(): Record<string, string> {
 export function saveOwnerPhotos(photos: Record<string, string>) {
   try {
     localStorage.setItem(OWNER_PHOTOS_KEY, JSON.stringify(photos));
+    window.dispatchEvent(
+      new StorageEvent("storage", { key: OWNER_PHOTOS_KEY }),
+    );
   } catch (e) {
     if (e instanceof DOMException && e.name === "QuotaExceededError") {
       throw new Error("Storage full — try a smaller image (under 200KB)");
@@ -108,6 +113,7 @@ export function getIconPhotos(): Record<string, string> {
 export function saveIconPhotos(photos: Record<string, string>) {
   try {
     localStorage.setItem(ICON_PHOTOS_KEY, JSON.stringify(photos));
+    window.dispatchEvent(new StorageEvent("storage", { key: ICON_PHOTOS_KEY }));
   } catch (e) {
     if (e instanceof DOMException && e.name === "QuotaExceededError") {
       throw new Error("Storage full — try a smaller image (under 200KB)");

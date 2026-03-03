@@ -1,6 +1,6 @@
 import { Copy, Crown, Star } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Player, Team } from "../backend.d";
 import { useAuctionData } from "../hooks/useAuctionData";
 import {
@@ -479,9 +479,24 @@ function TeamRow({
 export default function SquadsPage() {
   const { teams, players, auctionState, isLoading } = useAuctionData(5000);
   const league = getLeagueSettings();
-  const teamLogos = getTeamLogos();
-  const ownerPhotos = getOwnerPhotos();
-  const iconPhotos = getIconPhotos();
+  const [teamLogos, setTeamLogos] = useState(() => getTeamLogos());
+  const [ownerPhotos, setOwnerPhotos] = useState(() => getOwnerPhotos());
+  const [iconPhotos, setIconPhotos] = useState(() => getIconPhotos());
+
+  const refreshPhotos = useCallback(() => {
+    setTeamLogos(getTeamLogos());
+    setOwnerPhotos(getOwnerPhotos());
+    setIconPhotos(getIconPhotos());
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener("storage", refreshPhotos);
+    document.addEventListener("visibilitychange", refreshPhotos);
+    return () => {
+      window.removeEventListener("storage", refreshPhotos);
+      document.removeEventListener("visibilitychange", refreshPhotos);
+    };
+  }, [refreshPhotos]);
 
   // Hammer animation state
   const [hammerData, setHammerData] = useState<HammerAnimData | null>(null);
