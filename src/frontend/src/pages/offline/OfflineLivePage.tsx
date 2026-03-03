@@ -1,8 +1,8 @@
 import { Crown, Star, Users, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import type { Player, Team } from "../backend.d";
-import { useAuctionData } from "../hooks/useAuctionData";
+import { useOfflineAuctionData } from "../../hooks/useOfflineAuctionData";
+import type { OfflinePlayer, OfflineTeam } from "../../offlineStore";
 import {
   DEFAULT_LIVE_COLORS,
   DEFAULT_LIVE_LAYOUT,
@@ -14,10 +14,10 @@ import {
   getLiveLayout,
   getOwnerPhotos,
   getTeamLogos,
-} from "./LandingPage";
+} from "../LandingPage";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
-function fmt(n: bigint | number) {
+function fmt(n: number) {
   return Number(n).toLocaleString();
 }
 
@@ -49,8 +49,8 @@ function teamInitials(name: string) {
 // ─── SOLD Overlay ─────────────────────────────────────────────────────────────
 interface SoldOverlayProps {
   visible: boolean;
-  player: Player | null;
-  team: Team | null;
+  player: OfflinePlayer | null;
+  team: OfflineTeam | null;
   teamLogoUrl: string;
   colors: LiveColorTheme;
 }
@@ -72,13 +72,10 @@ function SoldOverlay({
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none"
         >
-          {/* Dimmed background */}
           <div
             className="absolute inset-0"
             style={{ background: `${colors.soldBannerBg}dd` }}
           />
-
-          {/* Main banner */}
           <motion.div
             initial={{ scale: 0.6, opacity: 0, y: 60 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -91,7 +88,6 @@ function SoldOverlay({
               boxShadow: `0 0 80px ${colors.soldBannerBorder}99, 0 0 160px ${colors.soldBannerBorder}40`,
             }}
           >
-            {/* SOLD! text */}
             <motion.div
               animate={{ scale: [1, 1.08, 1] }}
               transition={{
@@ -107,8 +103,6 @@ function SoldOverlay({
             >
               SOLD!
             </motion.div>
-
-            {/* Player name */}
             {player && (
               <div
                 className="font-broadcast text-4xl tracking-wider"
@@ -117,8 +111,6 @@ function SoldOverlay({
                 {player.name.toUpperCase()}
               </div>
             )}
-
-            {/* Team info */}
             {team && (
               <div className="flex items-center gap-4">
                 {teamLogoUrl ? (
@@ -179,15 +171,15 @@ function TeamTableRow({
   logoUrl,
   colors,
 }: {
-  team: Team;
+  team: OfflineTeam;
   isLeading: boolean;
   logoUrl: string;
   colors: LiveColorTheme;
 }) {
-  const slots = 7 - Number(team.numberOfPlayers);
+  const slots = 7 - team.numberOfPlayers;
   const pct =
-    Number(team.purseAmountTotal) > 0
-      ? (Number(team.purseAmountLeft) / Number(team.purseAmountTotal)) * 100
+    team.purseAmountTotal > 0
+      ? (team.purseAmountLeft / team.purseAmountTotal) * 100
       : 0;
 
   return (
@@ -201,7 +193,6 @@ function TeamTableRow({
           : "1px solid transparent",
       }}
     >
-      {/* Logo */}
       {logoUrl ? (
         <img
           src={logoUrl}
@@ -211,7 +202,7 @@ function TeamTableRow({
         />
       ) : (
         <div
-          className="rounded-full flex items-center justify-center font-broadcast text-xs flex-shrink-0"
+          className="rounded-full flex items-center justify-center font-broadcast flex-shrink-0"
           style={{
             width: 28,
             height: 28,
@@ -224,8 +215,6 @@ function TeamTableRow({
           {teamInitials(team.name).slice(0, 2)}
         </div>
       )}
-
-      {/* Name */}
       <span
         className="font-broadcast tracking-wide truncate flex-1 text-left"
         style={{
@@ -235,8 +224,6 @@ function TeamTableRow({
       >
         {team.name}
       </span>
-
-      {/* Purse bar + value */}
       <div className="flex items-center gap-1.5 flex-shrink-0">
         <div
           className="rounded-full overflow-hidden"
@@ -273,15 +260,6 @@ function TeamTableRow({
 // ─── Squad overlay helpers ────────────────────────────────────────────────────
 type SquadSlotType = "owner" | "icon" | "auction-filled" | "auction-empty";
 
-interface SquadSlotProps {
-  type: SquadSlotType;
-  name?: string;
-  photo?: string;
-  category?: string;
-  soldPrice?: bigint;
-  slotNumber?: number;
-}
-
 function getSquadCatColor(cat: string) {
   const c = cat.toLowerCase();
   if (c === "batsman") return "oklch(0.7 0.15 140)";
@@ -297,7 +275,14 @@ function SquadPlayerSlot({
   category,
   soldPrice,
   slotNumber,
-}: SquadSlotProps) {
+}: {
+  type: SquadSlotType;
+  name?: string;
+  photo?: string;
+  category?: string;
+  soldPrice?: number;
+  slotNumber?: number;
+}) {
   const isFixed = type === "owner" || type === "icon";
   const isEmpty = type === "auction-empty";
   const catColor = category
@@ -349,7 +334,6 @@ function SquadPlayerSlot({
             {name?.[0]?.toUpperCase() ?? "?"}
           </div>
         )}
-
         {type === "owner" && (
           <div
             className="absolute top-0.5 right-0.5 rounded-full p-0.5"
@@ -366,7 +350,6 @@ function SquadPlayerSlot({
             <Star size={6} style={{ color: "oklch(0.08 0.02 265)" }} />
           </div>
         )}
-
         {type === "auction-filled" && category && (
           <div
             className="absolute bottom-0 left-0 right-0"
@@ -374,7 +357,6 @@ function SquadPlayerSlot({
           />
         )}
       </div>
-
       <div
         className="font-broadcast tracking-wide text-center leading-tight mt-0.5"
         style={{
@@ -392,7 +374,6 @@ function SquadPlayerSlot({
       >
         {isEmpty ? "OPEN" : (name?.toUpperCase() ?? "")}
       </div>
-
       <div
         className="font-digital text-center"
         style={{
@@ -420,40 +401,35 @@ function SquadPlayerSlot({
   );
 }
 
-interface SquadTeamRowProps {
-  team: Team;
-  players: Player[];
-  teamLogoUrl: string;
-  ownerPhotoUrl: string;
-  iconPhotoUrl: string;
-}
-
 function SquadTeamRow({
   team,
   players,
   teamLogoUrl,
   ownerPhotoUrl,
   iconPhotoUrl,
-}: SquadTeamRowProps) {
+}: {
+  team: OfflineTeam;
+  players: OfflinePlayer[];
+  teamLogoUrl: string;
+  ownerPhotoUrl: string;
+  iconPhotoUrl: string;
+}) {
   const boughtPlayers = players
-    .filter((p) => p.status === "sold" && String(p.soldTo) === String(team.id))
-    .sort((a, b) => Number(b.soldPrice ?? 0n) - Number(a.soldPrice ?? 0n));
-
-  const isLocked = team.isTeamLocked;
+    .filter((p) => p.status === "sold" && p.soldTo === team.id)
+    .sort((a, b) => (b.soldPrice ?? 0) - (a.soldPrice ?? 0));
 
   return (
     <div
       className="flex items-center gap-3 px-3 py-2 rounded"
       style={{
-        background: isLocked
+        background: team.isTeamLocked
           ? "oklch(0.55 0.15 140 / 0.06)"
           : "oklch(0.10 0.025 255)",
-        border: isLocked
+        border: team.isTeamLocked
           ? "1px solid oklch(0.55 0.15 140 / 0.3)"
           : "1px solid oklch(0.18 0.04 255 / 0.6)",
       }}
     >
-      {/* Team info */}
       <div
         className="flex flex-col items-center gap-1 flex-shrink-0"
         style={{ width: 72 }}
@@ -502,14 +478,14 @@ function SquadTeamRow({
           className="font-broadcast tracking-widest"
           style={{
             fontSize: 6,
-            color: isLocked ? "oklch(0.65 0.18 140)" : "oklch(0.4 0.02 90)",
+            color: team.isTeamLocked
+              ? "oklch(0.65 0.18 140)"
+              : "oklch(0.4 0.02 90)",
           }}
         >
-          {Number(team.numberOfPlayers)}/7 {isLocked ? "✓ FULL" : "BOUGHT"}
+          {team.numberOfPlayers}/7 {team.isTeamLocked ? "✓ FULL" : "BOUGHT"}
         </div>
       </div>
-
-      {/* Player slots */}
       <div
         className="flex gap-1.5 overflow-x-auto flex-1 pb-1"
         style={{ scrollbarWidth: "none" }}
@@ -530,7 +506,7 @@ function SquadTeamRow({
           if (player) {
             return (
               <SquadPlayerSlot
-                key={String(player.id)}
+                key={player.id}
                 type="auction-filled"
                 name={player.name}
                 photo={player.imageUrl}
@@ -552,9 +528,9 @@ function SquadTeamRow({
   );
 }
 
-// ─── Main LivePage ────────────────────────────────────────────────────────────
-export default function LivePage() {
-  const { auctionState, teams, players, isLoading } = useAuctionData(3000);
+// ─── Main OfflineLivePage ─────────────────────────────────────────────────────
+export default function OfflineLivePage() {
+  const { auctionState, teams, players, isLoading } = useOfflineAuctionData();
   const [layout, setLayout] = useState<LiveLayoutConfig>(() => getLiveLayout());
   const [colors, setColors] = useState<LiveColorTheme>(() => getLiveColors());
   const [showSquads, setShowSquads] = useState(false);
@@ -568,18 +544,18 @@ export default function LivePage() {
   const [iconPhotos, setIconPhotos] = useState<Record<string, string>>(() =>
     getIconPhotos(),
   );
-  const sortedSquadTeams = [...teams].sort(
-    (a, b) => Number(a.id) - Number(b.id),
-  );
 
-  // Track sold overlay state — triggered by auction active→inactive transition
+  const sortedSquadTeams = [...teams].sort((a, b) => a.id - b.id);
+
   const prevAuctionActiveRef = useRef<boolean | null>(null);
-  const prevLeadingTeamIdRef = useRef<string | null>(null);
-  const prevCurrentPlayerIdRef = useRef<string | null>(null);
-  const prevCurrentBidRef = useRef<bigint>(0n);
+  const prevLeadingTeamIdRef = useRef<number | null>(null);
+  const prevCurrentPlayerIdRef = useRef<number | null>(null);
+  const prevCurrentBidRef = useRef<number>(0);
   const [soldOverlayVisible, setSoldOverlayVisible] = useState(false);
-  const [lastSoldPlayer, setLastSoldPlayer] = useState<Player | null>(null);
-  const [lastSoldTeam, setLastSoldTeam] = useState<Team | null>(null);
+  const [lastSoldPlayer, setLastSoldPlayer] = useState<OfflinePlayer | null>(
+    null,
+  );
+  const [lastSoldTeam, setLastSoldTeam] = useState<OfflineTeam | null>(null);
   const soldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Refresh layout + colors + league + logos from localStorage periodically
@@ -601,67 +577,53 @@ export default function LivePage() {
     };
   }, []);
 
-  const currentPlayer = auctionState?.currentPlayerId
-    ? (players.find(
-        (p) => String(p.id) === String(auctionState.currentPlayerId),
-      ) ?? null)
-    : null;
+  const currentPlayer =
+    auctionState?.currentPlayerId != null
+      ? (players.find((p) => p.id === auctionState.currentPlayerId) ?? null)
+      : null;
 
-  const leadingTeam = auctionState?.leadingTeamId
-    ? (teams.find((t) => String(t.id) === String(auctionState.leadingTeamId)) ??
-      null)
-    : null;
+  const leadingTeam =
+    auctionState?.leadingTeamId != null
+      ? (teams.find((t) => t.id === auctionState.leadingTeamId) ?? null)
+      : null;
 
-  // Detect sold: auction goes from active → inactive with a non-zero bid
   useEffect(() => {
     if (!auctionState) return;
-
     const wasActive = prevAuctionActiveRef.current;
     const isNowActive = auctionState.isActive;
 
     if (wasActive === true && isNowActive === false) {
-      // Auction just ended — find the sold player using previously tracked IDs
       const prevLeadingId = prevLeadingTeamIdRef.current;
       const prevPlayerId = prevCurrentPlayerIdRef.current;
       const prevBid = prevCurrentBidRef.current;
 
-      if (prevLeadingId && prevPlayerId && prevBid > 0n) {
-        // Player was sold
+      if (prevLeadingId != null && prevPlayerId != null && prevBid > 0) {
         const soldPlayer =
-          players.find(
-            (p) => String(p.id) === prevPlayerId && p.status === "sold",
-          ) ??
-          players.find((p) => String(p.id) === prevPlayerId) ??
+          players.find((p) => p.id === prevPlayerId && p.status === "sold") ??
+          players.find((p) => p.id === prevPlayerId) ??
           null;
-        const soldTeam =
-          teams.find((t) => String(t.id) === prevLeadingId) ?? null;
-
+        const soldTeam = teams.find((t) => t.id === prevLeadingId) ?? null;
         setLastSoldPlayer(soldPlayer);
         setLastSoldTeam(soldTeam);
         setSoldOverlayVisible(true);
-
         if (soldTimerRef.current) clearTimeout(soldTimerRef.current);
-        soldTimerRef.current = setTimeout(() => {
-          setSoldOverlayVisible(false);
-        }, 4000);
+        soldTimerRef.current = setTimeout(
+          () => setSoldOverlayVisible(false),
+          4000,
+        );
       }
     }
 
-    // Track current values for next comparison
     prevAuctionActiveRef.current = isNowActive;
-    prevLeadingTeamIdRef.current = auctionState.leadingTeamId
-      ? String(auctionState.leadingTeamId)
-      : prevLeadingTeamIdRef.current;
-    prevCurrentPlayerIdRef.current = auctionState.currentPlayerId
-      ? String(auctionState.currentPlayerId)
-      : null;
+    if (auctionState.leadingTeamId != null)
+      prevLeadingTeamIdRef.current = auctionState.leadingTeamId;
+    prevCurrentPlayerIdRef.current = auctionState.currentPlayerId ?? null;
     prevCurrentBidRef.current = auctionState.currentBid;
   }, [auctionState, players, teams]);
 
   const sortedTeams = [...teams].sort(
-    (a, b) => Number(b.purseAmountLeft) - Number(a.purseAmountLeft),
+    (a, b) => b.purseAmountLeft - a.purseAmountLeft,
   );
-
   const catColor = currentPlayer
     ? getCategoryColor(currentPlayer.category, colors)
     : "oklch(0.55 0.02 90)";
@@ -685,7 +647,7 @@ export default function LivePage() {
             className="font-broadcast tracking-widest text-sm"
             style={{ color: "oklch(0.55 0.02 90)" }}
           >
-            CONNECTING...
+            LOADING...
           </p>
         </div>
       </div>
@@ -695,8 +657,23 @@ export default function LivePage() {
   return (
     <div
       className="min-h-screen overflow-hidden relative broadcast-overlay"
-      style={{ fontFamily: "inherit", background: colors.pageBg }}
+      style={{ background: colors.pageBg }}
     >
+      {/* Offline badge */}
+      <div className="fixed top-2 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
+        <div
+          className="font-broadcast tracking-widest px-3 py-1"
+          style={{
+            background: "oklch(0.55 0.18 55 / 0.9)",
+            border: "1px solid oklch(0.72 0.18 55)",
+            color: "oklch(0.97 0.02 90)",
+            fontSize: 9,
+          }}
+        >
+          ⚡ OFFLINE MODE
+        </div>
+      </div>
+
       {/* Background atmosphere */}
       <div
         className="absolute inset-0 pointer-events-none"
@@ -704,7 +681,6 @@ export default function LivePage() {
           background: `radial-gradient(ellipse 80% 60% at 50% 20%, ${colors.atmosphereBg}b3 0%, transparent 70%)`,
         }}
       />
-      {/* Decorative grid */}
       <div
         className="absolute inset-0 pointer-events-none opacity-[0.04]"
         style={{
@@ -713,7 +689,6 @@ export default function LivePage() {
         }}
       />
 
-      {/* SOLD Overlay */}
       <SoldOverlay
         visible={soldOverlayVisible}
         player={lastSoldPlayer}
@@ -724,7 +699,7 @@ export default function LivePage() {
         colors={colors}
       />
 
-      {/* Squads Overlay — z-40 so SOLD overlay (z-50) still appears on top */}
+      {/* Squads Overlay */}
       <AnimatePresence>
         {showSquads && (
           <motion.div
@@ -736,7 +711,6 @@ export default function LivePage() {
             className="fixed inset-0 z-40 flex flex-col"
             style={{ background: colors.pageBg }}
           >
-            {/* Overlay header */}
             <div
               className="flex items-center justify-between px-5 py-3 flex-shrink-0"
               style={{
@@ -780,7 +754,6 @@ export default function LivePage() {
                   </div>
                 </div>
               </div>
-
               <button
                 type="button"
                 onClick={() => setShowSquads(false)}
@@ -800,20 +773,16 @@ export default function LivePage() {
                 </span>
               </button>
             </div>
-
-            {/* Background atmosphere */}
             <div
               className="absolute inset-0 pointer-events-none"
               style={{
                 background: `radial-gradient(ellipse 80% 40% at 50% 0%, ${colors.atmosphereBg}80 0%, transparent 70%)`,
               }}
             />
-
-            {/* Scrollable squads content */}
             <div className="flex-1 overflow-y-auto relative z-10 px-3 py-3 space-y-2">
               {sortedSquadTeams.map((team) => (
                 <SquadTeamRow
-                  key={String(team.id)}
+                  key={team.id}
                   team={team}
                   players={players}
                   teamLogoUrl={teamLogos[String(team.id)] ?? ""}
@@ -826,7 +795,7 @@ export default function LivePage() {
         )}
       </AnimatePresence>
 
-      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      {/* Header */}
       <header
         className="relative z-10 flex items-center justify-between px-6 py-3"
         style={{
@@ -834,7 +803,6 @@ export default function LivePage() {
           borderBottom: `1px solid ${colors.goldAccent}33`,
         }}
       >
-        {/* Logo + name */}
         <div className="flex items-center gap-3">
           {league.logoUrl ? (
             <img
@@ -871,10 +839,7 @@ export default function LivePage() {
             </div>
           </div>
         </div>
-
-        {/* Right side: SQUADS button + Live indicator */}
         <div className="flex items-center gap-4">
-          {/* SQUADS toggle button */}
           <button
             type="button"
             onClick={() => setShowSquads((v) => !v)}
@@ -896,7 +861,6 @@ export default function LivePage() {
               {showSquads ? "CLOSE" : "SQUADS"}
             </span>
           </button>
-
           <div className="flex items-center gap-2">
             <motion.div
               animate={{ opacity: [1, 0.3, 1] }}
@@ -920,23 +884,21 @@ export default function LivePage() {
         </div>
       </header>
 
-      {/* ── Main Content ───────────────────────────────────────────────────── */}
+      {/* Main Content */}
       <div className="relative z-10 flex flex-col md:flex-row h-[calc(100vh-57px)]">
         {/* Left: Player display */}
         <div className="flex-1 flex flex-col items-center justify-center px-4 md:px-6 gap-4 md:gap-6 min-h-0">
           <AnimatePresence mode="wait">
             {currentPlayer ? (
               <motion.div
-                key={String(currentPlayer.id)}
+                key={currentPlayer.id}
                 initial={{ opacity: 0, y: 30 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -30 }}
                 transition={{ duration: 0.4 }}
                 className="flex flex-col items-center gap-5"
               >
-                {/* Player photo */}
                 <div className="relative">
-                  {/* Gold corner brackets */}
                   {[
                     "top-0 left-0 border-t-2 border-l-2",
                     "top-0 right-0 border-t-2 border-r-2",
@@ -976,12 +938,9 @@ export default function LivePage() {
                         {currentPlayer.name[0]?.toUpperCase()}
                       </div>
                     )}
-
-                    {/* SOLD ribbon - bottom-left diagonal */}
                     <AnimatePresence>
                       {soldOverlayVisible &&
-                        String(lastSoldPlayer?.id) ===
-                          String(currentPlayer.id) && (
+                        lastSoldPlayer?.id === currentPlayer.id && (
                           <motion.div
                             key="sold-ribbon"
                             initial={{ opacity: 0, x: -40, y: 40 }}
@@ -1012,8 +971,6 @@ export default function LivePage() {
                         )}
                     </AnimatePresence>
                   </div>
-
-                  {/* Category badge */}
                   <div
                     className="absolute -bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 font-broadcast tracking-widest"
                     style={{
@@ -1029,8 +986,6 @@ export default function LivePage() {
                     {displayCategory(currentPlayer.category)}
                   </div>
                 </div>
-
-                {/* Player name */}
                 <div
                   className="font-broadcast tracking-wider text-center mt-4"
                   style={{
@@ -1041,8 +996,6 @@ export default function LivePage() {
                 >
                   {currentPlayer.name.toUpperCase()}
                 </div>
-
-                {/* Base price */}
                 <div
                   className="flex items-center gap-2 px-4 py-1"
                   style={{
@@ -1090,10 +1043,9 @@ export default function LivePage() {
           {/* Bid counter area */}
           {auctionState && (
             <div className="flex flex-col items-center gap-3">
-              {/* Current bid */}
               <AnimatePresence mode="wait">
                 <motion.div
-                  key={String(auctionState.currentBid)}
+                  key={auctionState.currentBid}
                   initial={{ scale: 0.85, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   exit={{ scale: 1.1, opacity: 0 }}
@@ -1119,12 +1071,10 @@ export default function LivePage() {
               >
                 CURRENT BID (PTS)
               </div>
-
-              {/* Leading team */}
               <AnimatePresence mode="wait">
                 {leadingTeam ? (
                   <motion.div
-                    key={String(leadingTeam.id)}
+                    key={leadingTeam.id}
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
@@ -1194,7 +1144,7 @@ export default function LivePage() {
           )}
         </div>
 
-        {/* Right panel: teams — desktop vertical, mobile horizontal strip */}
+        {/* Right panel — desktop vertical, mobile horizontal strip */}
         {/* Desktop */}
         <div
           className="hidden md:flex flex-col gap-3 py-4 px-3 overflow-hidden"
@@ -1211,16 +1161,13 @@ export default function LivePage() {
           >
             TEAM STANDINGS
           </div>
-
           {/* Team list — no scroll, all 10 teams fill the panel */}
           <div className="flex flex-col gap-1.5 flex-1">
             {sortedTeams.map((team) => (
               <TeamTableRow
-                key={String(team.id)}
+                key={team.id}
                 team={team}
-                isLeading={
-                  String(team.id) === String(auctionState?.leadingTeamId ?? "")
-                }
+                isLeading={team.id === auctionState?.leadingTeamId}
                 logoUrl={teamLogos[String(team.id)] ?? ""}
                 colors={colors}
               />
@@ -1239,12 +1186,11 @@ export default function LivePage() {
         >
           <div className="flex gap-2 min-w-max">
             {sortedTeams.map((team) => {
-              const isLeading =
-                String(team.id) === String(auctionState?.leadingTeamId ?? "");
+              const isLeading = team.id === auctionState?.leadingTeamId;
               const logoUrl = teamLogos[String(team.id)] ?? "";
               return (
                 <div
-                  key={String(team.id)}
+                  key={team.id}
                   className="flex flex-col items-center gap-0.5 px-1.5 py-1 rounded"
                   style={{
                     background: isLeading

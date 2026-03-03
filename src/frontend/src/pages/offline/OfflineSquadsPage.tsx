@@ -1,17 +1,17 @@
 import { Copy, Crown, Star } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import type { Player, Team } from "../backend.d";
-import { useAuctionData } from "../hooks/useAuctionData";
+import { useOfflineAuctionData } from "../../hooks/useOfflineAuctionData";
+import type { OfflinePlayer, OfflineTeam } from "../../offlineStore";
 import {
   getIconPhotos,
   getLeagueSettings,
   getOwnerPhotos,
   getTeamLogos,
-} from "./LandingPage";
+} from "../LandingPage";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
-function fmt(n: bigint | number) {
+function fmt(n: number) {
   return Number(n).toLocaleString();
 }
 
@@ -38,16 +38,13 @@ interface HammerAnimData {
   playerName: string;
   teamName?: string;
   teamLogoUrl?: string;
-  soldPrice?: bigint;
+  soldPrice?: number;
 }
 
 function HammerOverlay({
   data,
   visible,
-}: {
-  data: HammerAnimData | null;
-  visible: boolean;
-}) {
+}: { data: HammerAnimData | null; visible: boolean }) {
   return (
     <AnimatePresence>
       {visible && data && (
@@ -83,7 +80,6 @@ function HammerOverlay({
                   : "0 0 40px oklch(0.3 0.02 90 / 0.3)",
             }}
           >
-            {/* Hammer emoji */}
             <motion.div
               animate={{ rotate: [0, -30, 10, -15, 5, 0] }}
               transition={{ duration: 0.6, delay: 0.1 }}
@@ -91,8 +87,6 @@ function HammerOverlay({
             >
               🔨
             </motion.div>
-
-            {/* Status */}
             <motion.div
               animate={{ scale: [1, 1.1, 1] }}
               transition={{
@@ -115,16 +109,12 @@ function HammerOverlay({
             >
               {data.type === "sold" ? "SOLD!" : "UNSOLD"}
             </motion.div>
-
-            {/* Player name */}
             <div
               className="font-broadcast text-2xl tracking-wider"
               style={{ color: "oklch(0.88 0.015 90)" }}
             >
               {data.playerName.toUpperCase()}
             </div>
-
-            {/* Team info (sold only) */}
             {data.type === "sold" && data.teamName && (
               <div className="flex items-center gap-3">
                 {data.teamLogoUrl ? (
@@ -181,15 +171,6 @@ function HammerOverlay({
 // ─── Player slot ──────────────────────────────────────────────────────────────
 type SlotType = "owner" | "icon" | "auction-filled" | "auction-empty";
 
-interface PlayerSlotProps {
-  type: SlotType;
-  name?: string;
-  photo?: string;
-  category?: string;
-  soldPrice?: bigint;
-  slotNumber?: number;
-}
-
 function PlayerSlot({
   type,
   name,
@@ -197,7 +178,14 @@ function PlayerSlot({
   category,
   soldPrice,
   slotNumber,
-}: PlayerSlotProps) {
+}: {
+  type: SlotType;
+  name?: string;
+  photo?: string;
+  category?: string;
+  soldPrice?: number;
+  slotNumber?: number;
+}) {
   const isFixed = type === "owner" || type === "icon";
   const isEmpty = type === "auction-empty";
   const catColor = category
@@ -209,7 +197,6 @@ function PlayerSlot({
       className="flex flex-col items-center flex-shrink-0"
       style={{ width: 72 }}
     >
-      {/* Photo/placeholder */}
       <div
         className="relative"
         style={{
@@ -250,8 +237,6 @@ function PlayerSlot({
             {name?.[0]?.toUpperCase() ?? "?"}
           </div>
         )}
-
-        {/* Fixed slot icon */}
         {type === "owner" && (
           <div
             className="absolute top-0.5 right-0.5 rounded-full p-0.5"
@@ -268,8 +253,6 @@ function PlayerSlot({
             <Star size={7} style={{ color: "oklch(0.08 0.02 265)" }} />
           </div>
         )}
-
-        {/* Category color bar */}
         {type === "auction-filled" && category && (
           <div
             className="absolute bottom-0 left-0 right-0"
@@ -277,8 +260,6 @@ function PlayerSlot({
           />
         )}
       </div>
-
-      {/* Name */}
       <div
         className="font-broadcast tracking-wide text-center leading-tight mt-1"
         style={{
@@ -296,8 +277,6 @@ function PlayerSlot({
       >
         {isEmpty ? "OPEN" : (name?.toUpperCase() ?? "")}
       </div>
-
-      {/* Price / label */}
       <div
         className="font-digital text-center"
         style={{
@@ -333,38 +312,30 @@ function TeamRow({
   ownerPhotoUrl,
   iconPhotoUrl,
 }: {
-  team: Team;
-  players: Player[];
+  team: OfflineTeam;
+  players: OfflinePlayer[];
   teamLogoUrl: string;
   ownerPhotoUrl: string;
   iconPhotoUrl: string;
 }) {
   const boughtPlayers = players
-    .filter((p) => p.status === "sold" && String(p.soldTo) === String(team.id))
-    .sort((a, b) => Number(b.soldPrice ?? 0n) - Number(a.soldPrice ?? 0n));
+    .filter((p) => p.status === "sold" && p.soldTo === team.id)
+    .sort((a, b) => (b.soldPrice ?? 0) - (a.soldPrice ?? 0));
 
-  const isLocked = team.isTeamLocked;
-  const shareUrl = `${window.location.origin}/team/${team.id}`;
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(shareUrl).then(() => {
-      // Visual feedback handled by button
-    });
-  };
+  const shareUrl = `${window.location.origin}/offline/team/${team.id}`;
 
   return (
     <div
       className="flex items-center gap-3 px-3 py-2"
       style={{
-        background: isLocked
+        background: team.isTeamLocked
           ? "oklch(0.55 0.15 140 / 0.06)"
           : "oklch(0.10 0.025 255)",
-        border: isLocked
+        border: team.isTeamLocked
           ? "1px solid oklch(0.55 0.15 140 / 0.3)"
           : "1px solid oklch(0.18 0.04 255 / 0.6)",
       }}
     >
-      {/* Team info (fixed width) */}
       <div
         className="flex flex-col items-center gap-1 flex-shrink-0"
         style={{ width: 80 }}
@@ -409,7 +380,7 @@ function TeamRow({
         >
           {team.name.toUpperCase()}
         </div>
-        {isLocked && (
+        {team.isTeamLocked && (
           <span
             className="font-broadcast tracking-widest"
             style={{ fontSize: 7, color: "oklch(0.65 0.18 140)" }}
@@ -419,7 +390,7 @@ function TeamRow({
         )}
         <button
           type="button"
-          onClick={handleCopy}
+          onClick={() => navigator.clipboard.writeText(shareUrl)}
           className="flex items-center gap-0.5 transition-opacity hover:opacity-70 active:scale-90"
           title="Copy team link"
         >
@@ -432,28 +403,23 @@ function TeamRow({
           </span>
         </button>
       </div>
-
-      {/* Slots — horizontal scroll */}
       <div
         className="flex gap-2 overflow-x-auto flex-1 pb-1"
         style={{ scrollbarWidth: "none" }}
       >
-        {/* Slot 1: Owner */}
         <PlayerSlot type="owner" name={team.ownerName} photo={ownerPhotoUrl} />
-        {/* Slot 2: Icon */}
         <PlayerSlot
           type="icon"
           name={team.teamIconPlayer}
           photo={iconPhotoUrl}
         />
-        {/* Slots 3-9: Auction */}
         {Array.from({ length: 7 }).map((_, i) => {
           const player = boughtPlayers[i];
           const slotNum = i + 3;
           if (player) {
             return (
               <PlayerSlot
-                key={String(player.id)}
+                key={player.id}
                 type="auction-filled"
                 name={player.name}
                 photo={player.imageUrl}
@@ -475,40 +441,33 @@ function TeamRow({
   );
 }
 
-// ─── Main SquadsPage ──────────────────────────────────────────────────────────
-export default function SquadsPage() {
-  const { teams, players, auctionState, isLoading } = useAuctionData(5000);
+// ─── Main OfflineSquadsPage ───────────────────────────────────────────────────
+export default function OfflineSquadsPage() {
+  const { teams, players, auctionState, isLoading } = useOfflineAuctionData();
   const league = getLeagueSettings();
   const teamLogos = getTeamLogos();
   const ownerPhotos = getOwnerPhotos();
   const iconPhotos = getIconPhotos();
 
-  // Hammer animation state
   const [hammerData, setHammerData] = useState<HammerAnimData | null>(null);
   const [hammerVisible, setHammerVisible] = useState(false);
   const hammerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevAuctionActiveRef = useRef<boolean | null>(null);
-  const prevLeadingTeamRef = useRef<bigint | null>(null);
+  const prevLeadingTeamRef = useRef<number | null>(null);
 
-  // Detect sold / unsold transitions
   useEffect(() => {
     if (!auctionState) return;
-
     const wasActive = prevAuctionActiveRef.current;
     const isActive = auctionState.isActive;
 
     if (wasActive === true && isActive === false) {
-      // Auction just ended
       const leadingTeamId = prevLeadingTeamRef.current;
-      if (leadingTeamId && auctionState.currentBid > 0n) {
-        // Player was sold
-        const team = teams.find((t) => String(t.id) === String(leadingTeamId));
-        const currentPlayer = auctionState.currentPlayerId
-          ? players.find(
-              (p) => String(p.id) === String(auctionState.currentPlayerId),
-            )
-          : null;
-
+      if (leadingTeamId != null && auctionState.currentBid > 0) {
+        const team = teams.find((t) => t.id === leadingTeamId);
+        const currentPlayer =
+          auctionState.currentPlayerId != null
+            ? players.find((p) => p.id === auctionState.currentPlayerId)
+            : null;
         setHammerData({
           type: "sold",
           playerName: currentPlayer?.name ?? "Player",
@@ -517,12 +476,10 @@ export default function SquadsPage() {
           soldPrice: auctionState.currentBid,
         });
       } else {
-        // Player went unsold
-        const currentPlayer = auctionState.currentPlayerId
-          ? players.find(
-              (p) => String(p.id) === String(auctionState.currentPlayerId),
-            )
-          : null;
+        const currentPlayer =
+          auctionState.currentPlayerId != null
+            ? players.find((p) => p.id === auctionState.currentPlayerId)
+            : null;
         setHammerData({
           type: "unsold",
           playerName: currentPlayer?.name ?? "Player",
@@ -537,11 +494,10 @@ export default function SquadsPage() {
     prevLeadingTeamRef.current = auctionState.leadingTeamId ?? null;
   }, [auctionState, teams, players, teamLogos]);
 
-  const sortedTeams = [...teams].sort((a, b) => Number(a.id) - Number(b.id));
+  const sortedTeams = [...teams].sort((a, b) => a.id - b.id);
 
   return (
     <div className="min-h-screen bg-background broadcast-overlay">
-      {/* Background */}
       <div
         className="fixed inset-0 pointer-events-none"
         style={{
@@ -550,10 +506,23 @@ export default function SquadsPage() {
         }}
       />
 
-      {/* Hammer overlay */}
       <HammerOverlay data={hammerData} visible={hammerVisible} />
 
-      {/* Header */}
+      {/* OFFLINE badge */}
+      <div className="fixed top-3 right-3 z-40 pointer-events-none">
+        <div
+          className="font-broadcast tracking-widest px-3 py-1.5"
+          style={{
+            background: "oklch(0.55 0.18 55 / 0.9)",
+            border: "1px solid oklch(0.72 0.18 55)",
+            color: "oklch(0.97 0.02 90)",
+            fontSize: 9,
+          }}
+        >
+          ⚡ OFFLINE MODE
+        </div>
+      </div>
+
       <header
         className="sticky top-0 z-10 flex items-center justify-between px-5 py-3"
         style={{
@@ -592,8 +561,6 @@ export default function SquadsPage() {
             </div>
           </div>
         </div>
-
-        {/* Live indicator */}
         <div className="flex items-center gap-2">
           <motion.div
             animate={{ opacity: [1, 0.3, 1] }}
@@ -610,7 +577,6 @@ export default function SquadsPage() {
         </div>
       </header>
 
-      {/* Content */}
       <main className="relative z-10 px-3 py-3">
         {isLoading && sortedTeams.length === 0 ? (
           <div
@@ -635,7 +601,7 @@ export default function SquadsPage() {
           <div className="space-y-2">
             {sortedTeams.map((team) => (
               <TeamRow
-                key={String(team.id)}
+                key={team.id}
                 team={team}
                 players={players}
                 teamLogoUrl={teamLogos[String(team.id)] ?? ""}
@@ -647,7 +613,6 @@ export default function SquadsPage() {
         )}
       </main>
 
-      {/* Footer */}
       <footer
         className="relative z-10 text-center py-4 text-xs"
         style={{ color: "oklch(0.28 0.02 90)" }}

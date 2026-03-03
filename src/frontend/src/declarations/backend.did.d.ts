@@ -22,6 +22,7 @@ export type Category = { 'bowler' : null } |
   { 'batsman' : null };
 export interface Dashboard {
   'remainingPlayers' : bigint,
+  'unsoldPlayers' : bigint,
   'totalSpent' : Amount,
   'mostExpensivePlayer' : [] | [Player],
   'soldPlayers' : bigint,
@@ -45,7 +46,8 @@ export type Result = { 'ok' : null } |
   { 'err' : string };
 export type Status = { 'upcoming' : null } |
   { 'live' : null } |
-  { 'sold' : null };
+  { 'sold' : null } |
+  { 'unsold' : null };
 export interface Team {
   'id' : TeamId,
   'purseAmountLeft' : Amount,
@@ -100,7 +102,9 @@ export interface _SERVICE {
   'getTeamById' : ActorMethod<[TeamId], [] | [Team]>,
   'getTeams' : ActorMethod<[], Array<Team>>,
   'initialize' : ActorMethod<[], boolean>,
+  'markPlayerUnsold' : ActorMethod<[], Result>,
   'placeBid' : ActorMethod<[TeamId], Result>,
+  'putPlayerBackToAuction' : ActorMethod<[PlayerId], Result>,
   'resetAuction' : ActorMethod<[], undefined>,
   'selectPlayer' : ActorMethod<[PlayerId], Result>,
   'sellPlayer' : ActorMethod<[], Result>,

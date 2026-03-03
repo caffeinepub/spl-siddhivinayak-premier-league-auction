@@ -2,25 +2,17 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronUp,
-  Loader2,
   Minus,
   Plus,
-  RotateCcw,
   Save,
   Trash2,
   Upload,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Category, type Player, type Team } from "../backend.d";
-import { useActor } from "../hooks/useActor";
-import { useImageUpload } from "../hooks/useImageUpload";
-import {
-  type AllSettings,
-  isSettingsPlayer,
-  saveSettingsToBackend,
-} from "../utils/settingsStore";
+import type { Category, OfflinePlayer, OfflineTeam } from "../../offlineStore";
+import { offlineStore } from "../../offlineStore";
 import {
   DEFAULT_LIVE_COLORS,
   DEFAULT_LIVE_LAYOUT,
@@ -39,19 +31,29 @@ import {
   saveLiveColors,
   saveOwnerPhotos,
   saveTeamLogos,
-} from "./LandingPage";
+} from "../LandingPage";
 
 // ─── Auth guard ────────────────────────────────────────────────────────────────
-const AUTH_KEY = "spl_admin_auth";
+const OFFLINE_AUTH_KEY = "spl_offline_admin_auth";
 
 function isAuthenticated() {
-  return localStorage.getItem(AUTH_KEY) === "1";
+  return localStorage.getItem(OFFLINE_AUTH_KEY) === "1";
 }
 
 // ─── Tab type ─────────────────────────────────────────────────────────────────
 type Tab = "league" | "teams" | "players" | "layout" | "colours";
 
-// ─── Upload button ────────────────────────────────────────────────────────────
+// ─── Base64 upload helper ─────────────────────────────────────────────────────
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target?.result as string);
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+}
+
+// ─── Upload button (base64 / local) ───────────────────────────────────────────
 function UploadBtn({
   onUrl,
   label = "UPLOAD",
@@ -61,15 +63,21 @@ function UploadBtn({
   label?: string;
   circle?: boolean;
 }) {
-  const { upload, progress, isUploading } = useImageUpload();
-  const ref = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const url = await upload(file);
-    if (url) onUrl(url);
-    e.target.value = "";
+    setUploading(true);
+    try {
+      const url = await readFileAsDataUrl(file);
+      onUrl(url);
+    } catch {
+      toast.error("Failed to read image");
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
   };
 
   return (
@@ -82,10 +90,10 @@ function UploadBtn({
         borderRadius: circle ? "9999px" : 0,
       }}
     >
-      {isUploading ? (
+      {uploading ? (
         <>
-          <Loader2 size={12} className="animate-spin" />
-          {progress}%
+          <span className="animate-spin">⏳</span>
+          SAVING...
         </>
       ) : (
         <>
@@ -94,7 +102,6 @@ function UploadBtn({
         </>
       )}
       <input
-        ref={ref}
         type="file"
         accept="image/*"
         className="hidden"
@@ -157,31 +164,14 @@ function PhotoPreview({
 
 // ─── League Tab ───────────────────────────────────────────────────────────────
 function LeagueTab() {
-  const { actor } = useActor();
-  const [settings, setSettings] = useState<LeagueSettings>(getLeagueSettings());
+  const [settings, setSettings] = useState<LeagueSettings>(getLeagueSettings);
   const [saved, setSaved] = useState(false);
-  const [syncing, setSyncing] = useState(false);
 
   const save = () => {
     saveLeagueSettings(settings);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     toast.success("League settings saved");
-    // Background sync to backend (fire-and-forget, completely silent)
-    if (actor) {
-      setSyncing(true);
-      const allSettings: AllSettings = {
-        league: settings,
-        teamLogos: getTeamLogos(),
-        ownerPhotos: getOwnerPhotos(),
-        iconPhotos: getIconPhotos(),
-        liveColors: getLiveColors(),
-        liveLayout: getLiveLayout(),
-      };
-      saveSettingsToBackend(actor, allSettings).finally(() => {
-        setSyncing(false);
-      });
-    }
   };
 
   return (
@@ -192,8 +182,6 @@ function LeagueTab() {
       >
         LEAGUE SETTINGS
       </h2>
-
-      {/* Logo */}
       <div className="space-y-2">
         <span
           className="font-broadcast text-xs tracking-widest"
@@ -243,8 +231,6 @@ function LeagueTab() {
           </div>
         </div>
       </div>
-
-      {/* Logo size */}
       <div className="space-y-1">
         <div className="flex justify-between">
           <span
@@ -271,8 +257,6 @@ function LeagueTab() {
           className="w-full accent-amber-400"
         />
       </div>
-
-      {/* Short name */}
       <div className="space-y-1">
         <span
           className="font-broadcast text-xs tracking-widest"
@@ -295,8 +279,6 @@ function LeagueTab() {
           placeholder="SPL"
         />
       </div>
-
-      {/* Full name */}
       <div className="space-y-1">
         <span
           className="font-broadcast text-xs tracking-widest"
@@ -350,7 +332,6 @@ function LeagueTab() {
         </p>
       </div>
 
-      {/* Name size */}
       <div className="space-y-1">
         <div className="flex justify-between">
           <span
@@ -377,44 +358,28 @@ function LeagueTab() {
           className="w-full accent-amber-400"
         />
       </div>
-
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={save}
-          className="flex items-center gap-2 px-6 py-2 font-broadcast tracking-widest text-sm transition-all hover:opacity-90 active:scale-95"
-          style={{
-            background: saved
-              ? "oklch(0.55 0.15 140)"
-              : "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))",
-            color: "oklch(0.08 0.02 265)",
-            boxShadow: "0 0 20px oklch(0.78 0.165 85 / 0.25)",
-          }}
-        >
-          <Save size={14} />
-          {saved ? "SAVED!" : "SAVE LEAGUE"}
-        </button>
-        {syncing && (
-          <span
-            className="flex items-center gap-1.5 text-xs font-broadcast tracking-wider"
-            style={{ color: "oklch(0.55 0.02 90)" }}
-          >
-            <Loader2 size={11} className="animate-spin" />
-            Syncing…
-          </span>
-        )}
-      </div>
+      <button
+        type="button"
+        onClick={save}
+        className="flex items-center gap-2 px-6 py-2 font-broadcast tracking-widest text-sm transition-all hover:opacity-90 active:scale-95"
+        style={{
+          background: saved
+            ? "oklch(0.55 0.15 140)"
+            : "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))",
+          color: "oklch(0.08 0.02 265)",
+          boxShadow: "0 0 20px oklch(0.78 0.165 85 / 0.25)",
+        }}
+      >
+        <Save size={14} />
+        {saved ? "SAVED!" : "SAVE LEAGUE"}
+      </button>
     </div>
   );
 }
 
 // ─── Teams Tab ────────────────────────────────────────────────────────────────
 function TeamsTab() {
-  const { actor } = useActor();
-  const [teams, setTeams] = useState<Team[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
+  const [teams, setTeams] = useState<OfflineTeam[]>([]);
   const [teamLogos, setTeamLogos] =
     useState<Record<string, string>>(getTeamLogos);
   const [ownerPhotos, setOwnerPhotos] =
@@ -429,175 +394,91 @@ function TeamsTab() {
         ownerName: string;
         teamIconPlayer: string;
         purse: string;
-        saving: boolean;
       }
     >
   >({});
 
   useEffect(() => {
-    if (!actor) return;
-    // retryCount is intentionally used as a re-fetch trigger
-    void retryCount;
-    setLoading(true);
-    setLoadError(null);
-    actor
-      .getTeams()
-      .then((t) => {
-        setTeams(t.sort((a, b) => Number(a.id) - Number(b.id)));
-        const edits: typeof localEdits = {};
-        for (const team of t) {
-          edits[String(team.id)] = {
-            name: team.name,
-            ownerName: team.ownerName,
-            teamIconPlayer: team.teamIconPlayer,
-            purse: String(Number(team.purseAmountLeft)),
-            saving: false,
-          };
-        }
-        setLocalEdits(edits);
-        setLoadError(null);
-      })
-      .catch(() => {
-        setLoadError(
-          "Failed to load teams. Check your connection and try again.",
-        );
-      })
-      .finally(() => setLoading(false));
-  }, [actor, retryCount]);
+    const ts = offlineStore.getTeams().sort((a, b) => a.id - b.id);
+    setTeams(ts);
+    const edits: typeof localEdits = {};
+    for (const team of ts) {
+      edits[String(team.id)] = {
+        name: team.name,
+        ownerName: team.ownerName,
+        teamIconPlayer: team.teamIconPlayer,
+        purse: String(team.purseAmountLeft),
+      };
+    }
+    setLocalEdits(edits);
+  }, []);
 
   const setEdit = (id: string, patch: Partial<(typeof localEdits)[string]>) => {
     setLocalEdits((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
   };
 
-  const saveTeam = async (team: Team) => {
-    if (!actor) return;
+  const saveTeam = (team: OfflineTeam) => {
     const id = String(team.id);
     const edit = localEdits[id];
     if (!edit) return;
-    setEdit(id, { saving: true });
     try {
-      const r = await actor.updateTeam(
+      const r1 = offlineStore.updateTeam(
         team.id,
         edit.name,
         edit.ownerName,
         edit.teamIconPlayer,
       );
-      if (r.__kind__ === "err") {
-        toast.error(r.err);
-      } else {
-        // Also save purse if changed
-        const newPurse = BigInt(edit.purse || "0");
-        if (String(newPurse) !== String(team.purseAmountLeft)) {
-          const pr = await actor.editTeamPurse(team.id, newPurse);
-          if (pr.__kind__ === "err") toast.error(pr.err);
-        }
-        toast.success(`${edit.name} saved`);
-        setTeams((prev) =>
-          prev.map((t) =>
-            String(t.id) === String(team.id)
-              ? {
-                  ...t,
-                  name: edit.name,
-                  ownerName: edit.ownerName,
-                  teamIconPlayer: edit.teamIconPlayer,
-                  purseAmountLeft: BigInt(edit.purse || "0"),
-                }
-              : t,
-          ),
-        );
+      if (!r1.ok) {
+        toast.error(r1.err);
+        return;
       }
-    } catch {
-      toast.error("Failed to save team");
-    } finally {
-      setEdit(id, { saving: false });
+      const newPurse = Number(edit.purse || "0");
+      if (newPurse !== team.purseAmountLeft) {
+        const r2 = offlineStore.editTeamPurse(team.id, newPurse);
+        if (!r2.ok) {
+          toast.error(r2.err);
+          return;
+        }
+      }
+      setTeams(offlineStore.getTeams().sort((a, b) => a.id - b.id));
+      toast.success(`${edit.name} saved`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save team");
     }
   };
 
-  // Helper: background-sync all current settings to backend after a photo change
-  const bgSyncSettings = (
-    newLogos: Record<string, string>,
-    newOwner: Record<string, string>,
-    newIcon: Record<string, string>,
-  ) => {
-    if (!actor) return;
-    const allSettings: AllSettings = {
-      league: getLeagueSettings(),
-      teamLogos: newLogos,
-      ownerPhotos: newOwner,
-      iconPhotos: newIcon,
-      liveColors: getLiveColors(),
-      liveLayout: getLiveLayout(),
-    };
-    saveSettingsToBackend(actor, allSettings);
-  };
-
-  const saveLogo = (team: Team, url: string) => {
-    const id = String(team.id);
-    const newLogos = { ...teamLogos, [id]: url };
-    setTeamLogos(newLogos);
-    saveTeamLogos(newLogos);
-    toast.success("Logo saved");
-    bgSyncSettings(newLogos, ownerPhotos, iconPhotos);
+  const saveLogo = (team: OfflineTeam, url: string) => {
+    try {
+      const newLogos = { ...teamLogos, [String(team.id)]: url };
+      setTeamLogos(newLogos);
+      saveTeamLogos(newLogos);
+      toast.success("Logo saved");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save logo");
+    }
   };
 
   const saveOwnerPhoto = (teamId: string, url: string) => {
-    const updated = { ...ownerPhotos, [teamId]: url };
-    setOwnerPhotos(updated);
-    saveOwnerPhotos(updated);
-    toast.success("Owner photo saved");
-    bgSyncSettings(teamLogos, updated, iconPhotos);
+    try {
+      const updated = { ...ownerPhotos, [teamId]: url };
+      setOwnerPhotos(updated);
+      saveOwnerPhotos(updated);
+      toast.success("Owner photo saved");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save photo");
+    }
   };
 
   const saveIconPhoto = (teamId: string, url: string) => {
-    const updated = { ...iconPhotos, [teamId]: url };
-    setIconPhotos(updated);
-    saveIconPhotos(updated);
-    toast.success("Icon photo saved");
-    bgSyncSettings(teamLogos, ownerPhotos, updated);
+    try {
+      const updated = { ...iconPhotos, [teamId]: url };
+      setIconPhotos(updated);
+      saveIconPhotos(updated);
+      toast.success("Icon photo saved");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save photo");
+    }
   };
-
-  if (loading) {
-    return (
-      <div
-        className="flex items-center gap-3"
-        style={{ color: "oklch(0.55 0.02 90)" }}
-      >
-        <Loader2 size={16} className="animate-spin" />
-        <span className="font-broadcast text-xs tracking-widest">
-          LOADING TEAMS...
-        </span>
-      </div>
-    );
-  }
-
-  if (loadError) {
-    return (
-      <div className="space-y-4 max-w-sm">
-        <p
-          className="font-broadcast text-sm tracking-wide"
-          style={{ color: "oklch(0.65 0.18 25)" }}
-        >
-          {loadError}
-        </p>
-        <button
-          type="button"
-          onClick={() => {
-            setLoadError(null);
-            setRetryCount((c) => c + 1);
-          }}
-          className="flex items-center gap-2 px-5 py-2 font-broadcast tracking-widest text-xs transition-all hover:opacity-90 active:scale-95"
-          style={{
-            background:
-              "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))",
-            color: "oklch(0.08 0.02 265)",
-          }}
-        >
-          <RotateCcw size={13} />
-          RETRY
-        </button>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-4">
@@ -613,8 +494,7 @@ function TeamsTab() {
           name: team.name,
           ownerName: team.ownerName,
           teamIconPlayer: team.teamIconPlayer,
-          purse: String(Number(team.purseAmountLeft)),
-          saving: false,
+          purse: String(team.purseAmountLeft),
         };
         return (
           <div
@@ -625,9 +505,7 @@ function TeamsTab() {
               border: "1px solid oklch(0.22 0.04 255 / 0.6)",
             }}
           >
-            {/* Photos row */}
             <div className="flex gap-6 flex-wrap">
-              {/* Team logo */}
               <div className="flex flex-col items-center gap-1">
                 <span
                   className="font-broadcast text-xs tracking-widest"
@@ -647,7 +525,6 @@ function TeamsTab() {
                   label="LOGO"
                 />
               </div>
-              {/* Owner photo */}
               <div className="flex flex-col items-center gap-1">
                 <span
                   className="font-broadcast text-xs tracking-widest"
@@ -667,7 +544,6 @@ function TeamsTab() {
                   label="PHOTO"
                 />
               </div>
-              {/* Icon photo */}
               <div className="flex flex-col items-center gap-1">
                 <span
                   className="font-broadcast text-xs tracking-widest"
@@ -688,8 +564,9 @@ function TeamsTab() {
                 />
               </div>
             </div>
-
-            {/* Text fields */}
+            <p style={{ fontSize: 10, color: "oklch(0.38 0.02 90)" }}>
+              Tip: Use smaller images (under 200KB) to avoid storage issues.
+            </p>
             <div className="grid grid-cols-2 gap-3">
               {[
                 { label: "TEAM NAME", key: "name" as const },
@@ -720,23 +597,17 @@ function TeamsTab() {
                 </div>
               ))}
             </div>
-
             <button
               type="button"
               onClick={() => saveTeam(team)}
-              disabled={edit.saving}
-              className="flex items-center gap-2 px-5 py-1.5 font-broadcast tracking-widest text-xs transition-all hover:opacity-90 active:scale-95 disabled:opacity-50"
+              className="flex items-center gap-2 px-5 py-1.5 font-broadcast tracking-widest text-xs transition-all hover:opacity-90 active:scale-95"
               style={{
                 background:
                   "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))",
                 color: "oklch(0.08 0.02 265)",
               }}
             >
-              {edit.saving ? (
-                <Loader2 size={12} className="animate-spin" />
-              ) : (
-                <Save size={12} />
-              )}
+              <Save size={12} />
               SAVE TEAM
             </button>
           </div>
@@ -747,10 +618,10 @@ function TeamsTab() {
 }
 
 // ─── Players Tab ──────────────────────────────────────────────────────────────
-const CATEGORIES = [
-  { value: Category.batsman, label: "BATSMAN" },
-  { value: Category.bowler, label: "BOWLER" },
-  { value: Category.allrounder, label: "ALLROUNDER" },
+const CATEGORIES: { value: Category; label: string }[] = [
+  { value: "batsman", label: "BATSMAN" },
+  { value: "bowler", label: "BOWLER" },
+  { value: "allrounder", label: "ALLROUNDER" },
 ];
 
 interface PlayerEditState {
@@ -764,57 +635,40 @@ interface PlayerEditState {
 }
 
 function PlayersTab() {
-  const { actor } = useActor();
-  const [players, setPlayers] = useState<Player[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
+  const [players, setPlayers] = useState<OfflinePlayer[]>([]);
   const [filter, setFilter] = useState<"all" | Category>("all");
   const [edits, setEdits] = useState<Record<string, PlayerEditState>>({});
   const [showAddForm, setShowAddForm] = useState(false);
   const [newPlayer, setNewPlayer] = useState({
     name: "",
-    category: Category.batsman,
+    category: "batsman" as Category,
     basePrice: "100",
     imageUrl: "",
     rating: "3",
   });
-  const [addSaving, setAddSaving] = useState(false);
-  const { upload } = useImageUpload();
 
-  const fetchPlayers = useCallback(async () => {
-    if (!actor) return;
-    // retryCount is intentionally used as a re-fetch trigger
-    void retryCount;
-    setLoading(true);
-    try {
-      const ps = await actor.getPlayers();
-      setPlayers(ps.sort((a, b) => (a.name > b.name ? 1 : -1)));
-      setEdits((prev) => {
-        const e: typeof edits = {};
-        for (const p of ps) {
-          const id = String(p.id);
-          e[id] = {
-            name: p.name,
-            category: p.category as Category,
-            basePrice: String(Number(p.basePrice)),
-            imageUrl: p.imageUrl,
-            rating: String(Number(p.rating)),
-            saving: false,
-            expanded: prev[id]?.expanded ?? false,
-          };
-        }
-        return e;
-      });
-      setLoadError(null);
-    } catch {
-      setLoadError(
-        "Failed to load players. Check your connection and try again.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [actor, retryCount]);
+  const fetchPlayers = useCallback(() => {
+    const ps = offlineStore
+      .getPlayers()
+      .sort((a, b) => (a.name > b.name ? 1 : -1));
+    setPlayers(ps);
+    setEdits((prev) => {
+      const e: Record<string, PlayerEditState> = {};
+      for (const p of ps) {
+        const id = String(p.id);
+        e[id] = {
+          name: p.name,
+          category: p.category,
+          basePrice: String(p.basePrice),
+          imageUrl: p.imageUrl,
+          rating: String(p.rating),
+          saving: false,
+          expanded: prev[id]?.expanded ?? false,
+        };
+      }
+      return e;
+    });
+  }, []);
 
   useEffect(() => {
     fetchPlayers();
@@ -824,139 +678,89 @@ function PlayersTab() {
     setEdits((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
   };
 
-  const savePlayer = async (player: Player) => {
-    if (!actor) return;
+  const savePlayer = (player: OfflinePlayer) => {
     const id = String(player.id);
     const edit = edits[id];
     if (!edit) return;
-    setEdit(id, { saving: true });
     try {
-      const r = await actor.updatePlayer(
+      const r = offlineStore.updatePlayer(
         player.id,
         edit.name,
         edit.category,
-        BigInt(edit.basePrice || "100"),
+        Number(edit.basePrice || "100"),
         edit.imageUrl,
-        BigInt(edit.rating || "3"),
+        Number(edit.rating || "3"),
       );
-      if (r.__kind__ === "err") toast.error(r.err);
-      else {
-        toast.success(`${edit.name} saved`);
-        await fetchPlayers();
+      if (!r.ok) {
+        toast.error(r.err);
+        return;
       }
-    } catch {
-      toast.error("Save failed");
-    } finally {
-      setEdit(id, { saving: false });
+      toast.success(`${edit.name} saved`);
+      fetchPlayers();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save player");
     }
   };
 
-  const deletePlayer = async (player: Player) => {
-    if (!actor) return;
+  const deletePlayer = (player: OfflinePlayer) => {
     if (!confirm(`Delete ${player.name}? This cannot be undone.`)) return;
     try {
-      const r = await actor.deletePlayer(player.id);
-      if (r.__kind__ === "err") toast.error(r.err);
-      else {
-        toast.success("Player deleted");
-        await fetchPlayers();
+      const r = offlineStore.deletePlayer(player.id);
+      if (!r.ok) {
+        toast.error(r.err);
+        return;
       }
-    } catch {
-      toast.error("Delete failed");
+      toast.success("Player deleted");
+      fetchPlayers();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete player");
     }
   };
 
-  const addPlayer = async () => {
-    if (!actor) return;
-    if (!newPlayer.name.trim()) return toast.error("Name required");
-    setAddSaving(true);
+  const addPlayer = () => {
+    if (!newPlayer.name.trim()) {
+      toast.error("Name required");
+      return;
+    }
     try {
-      const r = await actor.addPlayer(
+      const r = offlineStore.addPlayer(
         newPlayer.name.trim(),
         newPlayer.category,
-        BigInt(newPlayer.basePrice || "100"),
+        Number(newPlayer.basePrice || "100"),
         newPlayer.imageUrl,
-        BigInt(newPlayer.rating || "3"),
+        Number(newPlayer.rating || "3"),
       );
-      if (r.__kind__ === "err") toast.error(r.err);
-      else {
-        toast.success("Player added");
-        setNewPlayer({
-          name: "",
-          category: Category.batsman,
-          basePrice: "100",
-          imageUrl: "",
-          rating: "3",
-        });
-        setShowAddForm(false);
-        await fetchPlayers();
+      if (!r.ok) {
+        toast.error(r.err);
+        return;
       }
-    } catch {
-      toast.error("Add failed");
-    } finally {
-      setAddSaving(false);
+      toast.success("Player added");
+      setNewPlayer({
+        name: "",
+        category: "batsman",
+        basePrice: "100",
+        imageUrl: "",
+        rating: "3",
+      });
+      setShowAddForm(false);
+      fetchPlayers();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to add player");
     }
   };
 
   const handleImageFile = async (file: File, id: string | null) => {
-    const url = await upload(file);
-    if (!url) return;
-    if (id === null) {
-      setNewPlayer((p) => ({ ...p, imageUrl: url }));
-    } else {
-      setEdit(id, { imageUrl: url });
+    try {
+      const url = await readFileAsDataUrl(file);
+      if (id === null) setNewPlayer((p) => ({ ...p, imageUrl: url }));
+      else setEdit(id, { imageUrl: url });
+    } catch {
+      toast.error("Failed to read image");
     }
   };
 
-  // Filter out the hidden settings player before displaying
-  const visiblePlayers = players.filter((p) => !isSettingsPlayer(p));
   const filteredPlayers =
-    filter === "all"
-      ? visiblePlayers
-      : visiblePlayers.filter((p) => p.category === filter);
-
-  if (loading) {
-    return (
-      <div
-        className="flex items-center gap-3"
-        style={{ color: "oklch(0.55 0.02 90)" }}
-      >
-        <Loader2 size={16} className="animate-spin" />
-        <span className="font-broadcast text-xs tracking-widest">
-          LOADING PLAYERS...
-        </span>
-      </div>
-    );
-  }
-
-  if (loadError) {
-    return (
-      <div className="space-y-4 max-w-sm">
-        <p
-          className="font-broadcast text-sm tracking-wide"
-          style={{ color: "oklch(0.65 0.18 25)" }}
-        >
-          {loadError}
-        </p>
-        <button
-          type="button"
-          onClick={() => {
-            setLoadError(null);
-            setRetryCount((c) => c + 1);
-          }}
-          className="flex items-center gap-2 px-5 py-2 font-broadcast tracking-widest text-xs transition-all hover:opacity-90 active:scale-95"
-          style={{
-            background:
-              "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))",
-            color: "oklch(0.08 0.02 265)",
-          }}
-        >
-          <RotateCcw size={13} />
-          RETRY
-        </button>
-      </div>
-    );
-  }
+    filter === "all" ? players : players.filter((p) => p.category === filter);
 
   return (
     <div className="space-y-4">
@@ -967,7 +771,6 @@ function PlayersTab() {
         >
           PLAYER SETTINGS ({filteredPlayers.length})
         </h2>
-        {/* Filter */}
         <div className="flex gap-1">
           {(
             [["all", "ALL"], ...CATEGORIES.map((c) => [c.value, c.label])] as [
@@ -999,7 +802,6 @@ function PlayersTab() {
         </div>
       </div>
 
-      {/* Add player button */}
       <button
         type="button"
         onClick={() => setShowAddForm((v) => !v)}
@@ -1014,7 +816,6 @@ function PlayersTab() {
         ADD PLAYER
       </button>
 
-      {/* Add form */}
       <AnimatePresence>
         {showAddForm && (
           <motion.div
@@ -1136,7 +937,6 @@ function PlayersTab() {
                   />
                 </div>
               </div>
-              {/* Photo upload */}
               <div className="flex items-center gap-3 flex-wrap">
                 {newPlayer.imageUrl && (
                   <img
@@ -1193,19 +993,14 @@ function PlayersTab() {
                 <button
                   type="button"
                   onClick={addPlayer}
-                  disabled={addSaving}
-                  className="flex items-center gap-2 px-5 py-1.5 font-broadcast tracking-widest text-xs transition-all hover:opacity-90 active:scale-95 disabled:opacity-50"
+                  className="flex items-center gap-2 px-5 py-1.5 font-broadcast tracking-widest text-xs transition-all hover:opacity-90 active:scale-95"
                   style={{
                     background:
                       "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))",
                     color: "oklch(0.08 0.02 265)",
                   }}
                 >
-                  {addSaving ? (
-                    <Loader2 size={12} className="animate-spin" />
-                  ) : (
-                    <Plus size={12} />
-                  )}
+                  <Plus size={12} />
                   ADD PLAYER
                 </button>
                 <button
@@ -1226,7 +1021,6 @@ function PlayersTab() {
         )}
       </AnimatePresence>
 
-      {/* Player list */}
       <div className="space-y-2">
         {filteredPlayers.map((player) => {
           const id = String(player.id);
@@ -1240,7 +1034,6 @@ function PlayersTab() {
                 border: "1px solid oklch(0.22 0.04 255 / 0.6)",
               }}
             >
-              {/* Header row */}
               <button
                 type="button"
                 className="flex items-center gap-3 px-3 py-2 cursor-pointer select-none w-full text-left"
@@ -1319,8 +1112,6 @@ function PlayersTab() {
                   />
                 )}
               </button>
-
-              {/* Expanded edit form */}
               {edit.expanded && (
                 <div
                   className="px-3 pb-3 pt-1 space-y-3 border-t"
@@ -1420,7 +1211,6 @@ function PlayersTab() {
                       />
                     </div>
                   </div>
-                  {/* Photo */}
                   <div className="flex items-center gap-3 flex-wrap">
                     {edit.imageUrl && (
                       <img
@@ -1473,24 +1263,21 @@ function PlayersTab() {
                       }}
                     />
                   </div>
-                  {/* Actions */}
+                  <p style={{ fontSize: 10, color: "oklch(0.38 0.02 90)" }}>
+                    Tip: Use smaller images (under 200KB) to save storage space.
+                  </p>
                   <div className="flex gap-2">
                     <button
                       type="button"
                       onClick={() => savePlayer(player)}
-                      disabled={edit.saving}
-                      className="flex items-center gap-2 px-4 py-1.5 font-broadcast tracking-widest text-xs transition-all hover:opacity-90 active:scale-95 disabled:opacity-50"
+                      className="flex items-center gap-2 px-4 py-1.5 font-broadcast tracking-widest text-xs transition-all hover:opacity-90 active:scale-95"
                       style={{
                         background:
                           "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))",
                         color: "oklch(0.08 0.02 265)",
                       }}
                     >
-                      {edit.saving ? (
-                        <Loader2 size={11} className="animate-spin" />
-                      ) : (
-                        <Save size={11} />
-                      )}
+                      <Save size={11} />
                       SAVE
                     </button>
                     <button
@@ -1594,37 +1381,15 @@ const LAYOUT_SLIDERS: LayoutSliderConfig[] = [
 ];
 
 function LiveLayoutTab() {
-  const { actor } = useActor();
   const [layout, setLayout] = useState<LiveLayoutConfig>(getLiveLayout);
   const [saved, setSaved] = useState(false);
-  const [syncing, setSyncing] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
 
   const save = () => {
     localStorage.setItem(LIVE_LAYOUT_KEY, JSON.stringify(layout));
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
-    toast.success("Live layout saved — refresh /live to apply");
-    // Background sync to backend
-    if (actor) {
-      setSyncing(true);
-      const allSettings: AllSettings = {
-        league: getLeagueSettings(),
-        teamLogos: getTeamLogos(),
-        ownerPhotos: getOwnerPhotos(),
-        iconPhotos: getIconPhotos(),
-        liveColors: getLiveColors(),
-        liveLayout: layout,
-      };
-      saveSettingsToBackend(actor, allSettings).finally(() => {
-        setSyncing(false);
-      });
-    }
-  };
-
-  const reset = () => {
-    setLayout({ ...DEFAULT_LIVE_LAYOUT });
-    toast.info("Reset to defaults (not saved yet)");
+    toast.success("Live layout saved — refresh /offline/live to apply");
   };
 
   return (
@@ -1653,7 +1418,10 @@ function LiveLayoutTab() {
           </button>
           <button
             type="button"
-            onClick={reset}
+            onClick={() => {
+              setLayout({ ...DEFAULT_LIVE_LAYOUT });
+              toast.info("Reset to defaults");
+            }}
             className="px-3 py-1.5 font-broadcast tracking-widest text-xs transition-all hover:opacity-70"
             style={{
               background: "oklch(0.11 0.03 255)",
@@ -1665,8 +1433,6 @@ function LiveLayoutTab() {
           </button>
         </div>
       </div>
-
-      {/* Preview */}
       <AnimatePresence>
         {showPreview && (
           <motion.div
@@ -1698,7 +1464,6 @@ function LiveLayoutTab() {
                   overflow: "hidden",
                 }}
               >
-                {/* Mini preview of live screen layout */}
                 <div
                   className="flex"
                   style={{
@@ -1707,7 +1472,6 @@ function LiveLayoutTab() {
                     border: "1px solid oklch(0.22 0.04 255)",
                   }}
                 >
-                  {/* Left: player area */}
                   <div className="flex-1 flex flex-col items-center justify-center gap-3">
                     <div
                       style={{
@@ -1755,7 +1519,6 @@ function LiveLayoutTab() {
                       LEADING TEAM
                     </div>
                   </div>
-                  {/* Right panel */}
                   <div
                     style={{
                       width: layout.rightPanelWidth,
@@ -1764,18 +1527,20 @@ function LiveLayoutTab() {
                       padding: 8,
                     }}
                   >
-                    {Array.from({ length: 6 }).map((_, i) => (
-                      <div
-                        key={`preview-team-row-${i + 1}`}
-                        style={{
-                          height: Math.round(
-                            14 * (layout.teamTableFontSize / 100),
-                          ),
-                          background: "oklch(0.14 0.04 255)",
-                          marginBottom: 3,
-                        }}
-                      />
-                    ))}
+                    {(["r1", "r2", "r3", "r4", "r5", "r6"] as const).map(
+                      (rk) => (
+                        <div
+                          key={rk}
+                          style={{
+                            height: Math.round(
+                              14 * (layout.teamTableFontSize / 100),
+                            ),
+                            background: "oklch(0.14 0.04 255)",
+                            marginBottom: 3,
+                          }}
+                        />
+                      ),
+                    )}
                     <div
                       style={{
                         height: layout.chartHeight,
@@ -1790,8 +1555,6 @@ function LiveLayoutTab() {
           </motion.div>
         )}
       </AnimatePresence>
-
-      {/* Sliders */}
       <div className="space-y-4">
         {LAYOUT_SLIDERS.map(({ key, label, min, max, unit }) => (
           <div key={key} className="space-y-1">
@@ -1859,39 +1622,21 @@ function LiveLayoutTab() {
           </div>
         ))}
       </div>
-
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={save}
-          className="flex items-center gap-2 px-6 py-2 font-broadcast tracking-widest text-sm transition-all hover:opacity-90 active:scale-95"
-          style={{
-            background: saved
-              ? "oklch(0.55 0.15 140)"
-              : "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))",
-            color: "oklch(0.08 0.02 265)",
-            boxShadow: "0 0 20px oklch(0.78 0.165 85 / 0.25)",
-          }}
-        >
-          <Save size={14} />
-          {saved ? "SAVED!" : "SAVE LAYOUT"}
-        </button>
-        {syncing && (
-          <span
-            className="flex items-center gap-1.5 text-xs font-broadcast tracking-wider"
-            style={{ color: "oklch(0.55 0.02 90)" }}
-          >
-            <Loader2 size={11} className="animate-spin" />
-            Syncing…
-          </span>
-        )}
-      </div>
-      <p
-        className="font-broadcast tracking-wide text-xs"
-        style={{ color: "oklch(0.4 0.02 90)" }}
+      <button
+        type="button"
+        onClick={save}
+        className="flex items-center gap-2 px-6 py-2 font-broadcast tracking-widest text-sm transition-all hover:opacity-90 active:scale-95"
+        style={{
+          background: saved
+            ? "oklch(0.55 0.15 140)"
+            : "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))",
+          color: "oklch(0.08 0.02 265)",
+          boxShadow: "0 0 20px oklch(0.78 0.165 85 / 0.25)",
+        }}
       >
-        Refresh /live after saving to see the updated layout.
-      </p>
+        <Save size={14} />
+        {saved ? "SAVED!" : "SAVE LAYOUT"}
+      </button>
     </div>
   );
 }
@@ -1917,11 +1662,11 @@ const COLOR_GROUPS: ColorGroup[] = [
     label: "ACCENTS & TEXT",
     fields: [
       { key: "goldAccent", label: "Primary Accent (Gold)" },
-      { key: "silverAccent", label: "Secondary Accent (Silver)" },
+      { key: "silverAccent", label: "Secondary Accent" },
       { key: "primaryText", label: "Primary Text" },
-      { key: "secondaryText", label: "Secondary Text / Captions" },
+      { key: "secondaryText", label: "Secondary Text" },
       { key: "gridColor", label: "Decorative Grid" },
-      { key: "liveDotColor", label: "LIVE Indicator Dot" },
+      { key: "liveDotColor", label: "LIVE Dot" },
     ],
   },
   {
@@ -1952,15 +1697,15 @@ const COLOR_GROUPS: ColorGroup[] = [
     label: "PURSE CHART",
     fields: [
       { key: "chartBarDefault", label: "Bar Colour (Default)" },
-      { key: "chartBarLeading", label: "Bar Colour (Leading Team)" },
+      { key: "chartBarLeading", label: "Bar Colour (Leading)" },
     ],
   },
   {
     label: "CATEGORY BADGES",
     fields: [
-      { key: "batsmanColor", label: "Batsman Badge" },
-      { key: "bowlerColor", label: "Bowler Badge" },
-      { key: "allrounderColor", label: "Allrounder Badge" },
+      { key: "batsmanColor", label: "Batsman" },
+      { key: "bowlerColor", label: "Bowler" },
+      { key: "allrounderColor", label: "Allrounder" },
     ],
   },
   {
@@ -1968,52 +1713,27 @@ const COLOR_GROUPS: ColorGroup[] = [
     fields: [
       { key: "soldBannerBg", label: "Banner Background" },
       { key: "soldBannerBorder", label: "Banner Border" },
-      { key: "soldTextColor", label: "SOLD! Text Colour" },
+      { key: "soldTextColor", label: "SOLD! Text" },
     ],
   },
 ];
 
 function LiveColoursTab() {
-  const { actor } = useActor();
   const [colors, setColors] = useState<LiveColorTheme>(getLiveColors);
   const [saved, setSaved] = useState(false);
-  const [syncing, setSyncing] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
 
-  const set = (key: keyof LiveColorTheme, val: string) => {
+  const set = (key: keyof LiveColorTheme, val: string) =>
     setColors((prev) => ({ ...prev, [key]: val }));
-  };
 
   const save = () => {
     saveLiveColors(colors);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
-    toast.success("Colours saved — refresh /live to apply");
-    // Background sync to backend
-    if (actor) {
-      setSyncing(true);
-      const allSettings: AllSettings = {
-        league: getLeagueSettings(),
-        teamLogos: getTeamLogos(),
-        ownerPhotos: getOwnerPhotos(),
-        iconPhotos: getIconPhotos(),
-        liveColors: colors,
-        liveLayout: getLiveLayout(),
-      };
-      saveSettingsToBackend(actor, allSettings).finally(() => {
-        setSyncing(false);
-      });
-    }
-  };
-
-  const reset = () => {
-    setColors({ ...DEFAULT_LIVE_COLORS });
-    toast.info("Reset to defaults (not saved yet)");
+    toast.success("Colours saved — refresh /offline/live to apply");
   };
 
   return (
     <div className="space-y-6 max-w-2xl">
-      {/* Header row */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2
           className="font-broadcast text-lg tracking-widest"
@@ -2021,297 +1741,22 @@ function LiveColoursTab() {
         >
           LIVE SCREEN COLOURS
         </h2>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={() => setShowPreview((v) => !v)}
-            className="px-4 py-1.5 font-broadcast tracking-widest text-xs transition-all hover:opacity-80"
-            style={{
-              background: showPreview
-                ? "oklch(0.78 0.165 85 / 0.2)"
-                : "oklch(0.11 0.03 255)",
-              border: "1px solid oklch(0.78 0.165 85 / 0.4)",
-              color: "oklch(0.78 0.165 85)",
-            }}
-          >
-            {showPreview ? "HIDE PREVIEW" : "SHOW PREVIEW"}
-          </button>
-          <button
-            type="button"
-            onClick={reset}
-            className="px-3 py-1.5 font-broadcast tracking-widest text-xs transition-all hover:opacity-70"
-            style={{
-              background: "oklch(0.11 0.03 255)",
-              border: "1px solid oklch(0.22 0.04 255)",
-              color: "oklch(0.5 0.02 90)",
-            }}
-          >
-            RESET
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setColors({ ...DEFAULT_LIVE_COLORS });
+            toast.info("Reset to defaults");
+          }}
+          className="px-3 py-1.5 font-broadcast tracking-widest text-xs transition-all hover:opacity-70"
+          style={{
+            background: "oklch(0.11 0.03 255)",
+            border: "1px solid oklch(0.22 0.04 255)",
+            color: "oklch(0.5 0.02 90)",
+          }}
+        >
+          RESET
+        </button>
       </div>
-
-      {/* Mini preview */}
-      <AnimatePresence>
-        {showPreview && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="overflow-hidden"
-          >
-            <div
-              className="p-3"
-              style={{
-                background: "oklch(0.07 0.025 255)",
-                border: "1px solid oklch(0.22 0.04 255)",
-              }}
-            >
-              <div
-                className="font-broadcast text-xs tracking-widest mb-2"
-                style={{ color: "oklch(0.45 0.02 90)" }}
-              >
-                COLOUR PREVIEW (scaled 45%)
-              </div>
-              <div
-                style={{
-                  transform: "scale(0.45)",
-                  transformOrigin: "top left",
-                  width: "222%",
-                  height: 240,
-                  pointerEvents: "none",
-                  overflow: "hidden",
-                }}
-              >
-                {/* Simulated live screen */}
-                <div
-                  className="flex"
-                  style={{ height: "100%", background: colors.pageBg }}
-                >
-                  {/* Header */}
-                  <div
-                    style={{
-                      position: "absolute",
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      height: 40,
-                      background: colors.headerBg,
-                      borderBottom: `1px solid ${colors.goldAccent}44`,
-                      display: "flex",
-                      alignItems: "center",
-                      paddingLeft: 12,
-                      gap: 8,
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: "50%",
-                        background: colors.liveDotColor,
-                      }}
-                    />
-                    <span
-                      style={{
-                        fontFamily: '"Bricolage Grotesque"',
-                        fontWeight: 900,
-                        fontSize: 12,
-                        color: colors.goldAccent,
-                      }}
-                    >
-                      SPL
-                    </span>
-                    <span
-                      style={{
-                        fontFamily: '"Bricolage Grotesque"',
-                        fontSize: 10,
-                        color: colors.secondaryText,
-                      }}
-                    >
-                      LIVE
-                    </span>
-                  </div>
-
-                  {/* Center: player + bid */}
-                  <div
-                    style={{
-                      flex: 1,
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      paddingTop: 40,
-                      gap: 10,
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 80,
-                        height: 100,
-                        background: colors.playerImageBg,
-                        border: `2px solid ${colors.goldAccent}66`,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: colors.secondaryText,
-                        fontSize: 10,
-                        fontFamily: '"Bricolage Grotesque"',
-                      }}
-                    >
-                      PHOTO
-                    </div>
-                    <span
-                      style={{
-                        fontFamily: '"Bricolage Grotesque"',
-                        fontWeight: 900,
-                        fontSize: 18,
-                        color: colors.primaryText,
-                      }}
-                    >
-                      PLAYER NAME
-                    </span>
-                    {/* Category badges */}
-                    <div style={{ display: "flex", gap: 6 }}>
-                      {(
-                        [
-                          ["BATSMAN", colors.batsmanColor],
-                          ["BOWLER", colors.bowlerColor],
-                          ["ALLROUNDER", colors.allrounderColor],
-                        ] as [string, string][]
-                      ).map(([label, color]) => (
-                        <span
-                          key={label}
-                          style={{
-                            background: `${color}22`,
-                            border: `1px solid ${color}66`,
-                            color,
-                            padding: "2px 6px",
-                            fontSize: 9,
-                            fontFamily: '"Bricolage Grotesque"',
-                            fontWeight: 700,
-                          }}
-                        >
-                          {label}
-                        </span>
-                      ))}
-                    </div>
-                    <span
-                      style={{
-                        fontFamily: '"Geist Mono", monospace',
-                        fontWeight: 700,
-                        fontSize: 40,
-                        color: colors.bidCounterColor,
-                        textShadow: `0 0 20px ${colors.bidCounterGlow}`,
-                      }}
-                    >
-                      5,200
-                    </span>
-                    <div
-                      style={{
-                        background: colors.leadingTeamBg,
-                        border: `1px solid ${colors.goldAccent}55`,
-                        padding: "4px 12px",
-                        color: colors.leadingTeamText,
-                        fontSize: 12,
-                        fontFamily: '"Bricolage Grotesque"',
-                        fontWeight: 700,
-                      }}
-                    >
-                      LEADING TEAM
-                    </div>
-                  </div>
-
-                  {/* Right panel */}
-                  <div
-                    style={{
-                      width: 160,
-                      background: colors.rightPanelBg,
-                      borderLeft: `1px solid ${colors.goldAccent}22`,
-                      padding: 8,
-                      paddingTop: 48,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 4,
-                    }}
-                  >
-                    {(
-                      [
-                        "Team 1 (leading)",
-                        "Team 2",
-                        "Team 3",
-                        "Team 4",
-                        "Team 5",
-                      ] as const
-                    ).map((teamLabel, i) => {
-                      const leading = i === 0;
-                      return (
-                        <div
-                          key={teamLabel}
-                          style={{
-                            background: leading
-                              ? colors.teamRowLeadingBg
-                              : colors.teamRowBg,
-                            border: `1px solid ${leading ? colors.teamRowLeadingBorder : "transparent"}`,
-                            height: 20,
-                            display: "flex",
-                            alignItems: "center",
-                            paddingLeft: 6,
-                          }}
-                        >
-                          <span
-                            style={{
-                              fontSize: 9,
-                              color: leading
-                                ? colors.teamRowLeadingText
-                                : colors.teamRowText,
-                              fontFamily: '"Bricolage Grotesque"',
-                            }}
-                          >
-                            {teamLabel}
-                          </span>
-                        </div>
-                      );
-                    })}
-                    {/* Mini chart bars */}
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "flex-end",
-                        gap: 3,
-                        marginTop: 8,
-                        height: 40,
-                      }}
-                    >
-                      {[
-                        { h: 80, id: "bar-a" },
-                        { h: 60, id: "bar-b" },
-                        { h: 45, id: "bar-c" },
-                        { h: 90, id: "bar-d-leading" },
-                        { h: 55, id: "bar-e" },
-                      ].map(({ h, id }) => (
-                        <div
-                          key={id}
-                          style={{
-                            flex: 1,
-                            height: `${h}%`,
-                            background:
-                              id === "bar-d-leading"
-                                ? colors.chartBarLeading
-                                : colors.chartBarDefault,
-                          }}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Colour groups */}
       <div className="space-y-8">
         {COLOR_GROUPS.map((group) => (
           <div key={group.label} className="space-y-3">
@@ -2334,7 +1779,6 @@ function LiveColoursTab() {
                     border: "1px solid oklch(0.22 0.04 255 / 0.5)",
                   }}
                 >
-                  {/* Colour swatch + native picker */}
                   <div className="relative flex-shrink-0">
                     <div
                       style={{
@@ -2363,7 +1807,6 @@ function LiveColoursTab() {
                       }}
                     />
                   </div>
-                  {/* Label + hex input */}
                   <div className="flex-1 min-w-0">
                     <div
                       className="font-broadcast tracking-wide text-xs truncate mb-1"
@@ -2382,7 +1825,7 @@ function LiveColoursTab() {
                         color: "oklch(0.75 0.02 90)",
                         outline: "none",
                       }}
-                      placeholder="#rrggbb or rgba(...)"
+                      placeholder="#rrggbb or oklch(...)"
                     />
                   </div>
                 </div>
@@ -2391,45 +1834,26 @@ function LiveColoursTab() {
           </div>
         ))}
       </div>
-
-      {/* Save button */}
-      <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={save}
-          className="flex items-center gap-2 px-6 py-2 font-broadcast tracking-widest text-sm transition-all hover:opacity-90 active:scale-95"
-          style={{
-            background: saved
-              ? "oklch(0.55 0.15 140)"
-              : "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))",
-            color: "oklch(0.08 0.02 265)",
-            boxShadow: "0 0 20px oklch(0.78 0.165 85 / 0.25)",
-          }}
-        >
-          <Save size={14} />
-          {saved ? "SAVED!" : "SAVE COLOURS"}
-        </button>
-        {syncing && (
-          <span
-            className="flex items-center gap-1.5 text-xs font-broadcast tracking-wider"
-            style={{ color: "oklch(0.55 0.02 90)" }}
-          >
-            <Loader2 size={11} className="animate-spin" />
-            Syncing…
-          </span>
-        )}
-      </div>
-      <p
-        className="font-broadcast tracking-wide text-xs"
-        style={{ color: "oklch(0.4 0.02 90)" }}
+      <button
+        type="button"
+        onClick={save}
+        className="flex items-center gap-2 px-6 py-2 font-broadcast tracking-widest text-sm transition-all hover:opacity-90 active:scale-95"
+        style={{
+          background: saved
+            ? "oklch(0.55 0.15 140)"
+            : "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))",
+          color: "oklch(0.08 0.02 265)",
+          boxShadow: "0 0 20px oklch(0.78 0.165 85 / 0.25)",
+        }}
       >
-        Refresh /live after saving to see the updated colours.
-      </p>
+        <Save size={14} />
+        {saved ? "SAVED!" : "SAVE COLOURS"}
+      </button>
     </div>
   );
 }
 
-// ─── Not Authenticated view ────────────────────────────────────────────────────
+// ─── Not Authenticated ────────────────────────────────────────────────────────
 function NotAuthenticatedView() {
   return (
     <div className="min-h-screen bg-background flex items-center justify-center broadcast-overlay">
@@ -2455,10 +1879,10 @@ function NotAuthenticatedView() {
           ACCESS REQUIRED
         </div>
         <p className="text-sm mb-6" style={{ color: "oklch(0.45 0.02 90)" }}>
-          Please log in via the admin panel first.
+          Please log in via the offline admin panel first.
         </p>
         <a
-          href="/admin"
+          href="/offline/admin"
           className="inline-flex items-center gap-2 px-6 py-2.5 font-broadcast tracking-widest text-sm transition-all hover:opacity-90"
           style={{
             background:
@@ -2467,23 +1891,19 @@ function NotAuthenticatedView() {
             boxShadow: "0 0 20px oklch(0.78 0.165 85 / 0.25)",
           }}
         >
-          GO TO ADMIN
+          GO TO OFFLINE ADMIN
         </a>
       </div>
     </div>
   );
 }
 
-// ─── Main SettingsPage ────────────────────────────────────────────────────────
-export default function SettingsPage() {
+// ─── Main OfflineSettingsPage ─────────────────────────────────────────────────
+export default function OfflineSettingsPage() {
   const [tab, setTab] = useState<Tab>("league");
-  // Read auth from localStorage on mount — NO automatic redirect (per spec)
   const [authed] = useState(() => isAuthenticated());
 
-  // If not authenticated, show a styled message with a link — DO NOT redirect
-  if (!authed) {
-    return <NotAuthenticatedView />;
-  }
+  if (!authed) return <NotAuthenticatedView />;
 
   const TABS: { id: Tab; label: string }[] = [
     { id: "league", label: "LEAGUE" },
@@ -2495,7 +1915,20 @@ export default function SettingsPage() {
 
   return (
     <div className="min-h-screen bg-background broadcast-overlay">
-      {/* Background */}
+      {/* OFFLINE badge */}
+      <div className="fixed top-3 right-3 z-40 pointer-events-none">
+        <div
+          className="font-broadcast tracking-widest px-3 py-1.5"
+          style={{
+            background: "oklch(0.55 0.18 55 / 0.9)",
+            border: "1px solid oklch(0.72 0.18 55)",
+            color: "oklch(0.97 0.02 90)",
+            fontSize: 9,
+          }}
+        >
+          ⚡ OFFLINE MODE
+        </div>
+      </div>
       <div
         className="fixed inset-0 pointer-events-none"
         style={{
@@ -2503,8 +1936,6 @@ export default function SettingsPage() {
             "radial-gradient(ellipse 80% 60% at 50% 10%, oklch(0.14 0.05 255 / 0.6) 0%, transparent 70%)",
         }}
       />
-
-      {/* Header */}
       <header
         className="sticky top-0 z-20 flex items-center gap-4 px-5 py-3"
         style={{
@@ -2514,7 +1945,7 @@ export default function SettingsPage() {
         }}
       >
         <a
-          href="/admin"
+          href="/offline/admin"
           className="flex items-center gap-2 font-broadcast tracking-wider text-sm transition-opacity hover:opacity-70"
           style={{ color: "oklch(0.55 0.02 90)" }}
         >
@@ -2527,8 +1958,20 @@ export default function SettingsPage() {
         >
           SETTINGS
         </div>
+        <div className="flex items-center gap-1.5 ml-auto">
+          <span
+            className="font-broadcast tracking-widest px-2 py-0.5"
+            style={{
+              background: "oklch(0.55 0.18 55 / 0.2)",
+              border: "1px solid oklch(0.55 0.18 55 / 0.5)",
+              color: "oklch(0.72 0.18 55)",
+              fontSize: 9,
+            }}
+          >
+            ⚡ OFFLINE
+          </span>
+        </div>
       </header>
-
       <div className="relative z-10 flex flex-col md:flex-row min-h-[calc(100vh-57px)]">
         {/* Mobile: horizontal scrollable tabs */}
         <nav
@@ -2584,7 +2027,6 @@ export default function SettingsPage() {
           ))}
         </nav>
 
-        {/* Content */}
         <main className="flex-1 p-4 md:p-6 overflow-y-auto">
           <AnimatePresence mode="wait">
             <motion.div

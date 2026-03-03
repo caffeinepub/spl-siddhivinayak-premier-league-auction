@@ -43,6 +43,7 @@ export interface PlayerWithTeam {
 }
 export interface Dashboard {
     remainingPlayers: bigint;
+    unsoldPlayers: bigint;
     totalSpent: Amount;
     mostExpensivePlayer?: Player;
     soldPlayers: bigint;
@@ -72,7 +73,8 @@ export enum Category {
 export enum Status {
     upcoming = "upcoming",
     live = "live",
-    sold = "sold"
+    sold = "sold",
+    unsold = "unsold"
 }
 export interface backendInterface {
     addPlayer(name: string, category: Category, basePrice: Amount, imageUrl: string, rating: Rating): Promise<Result>;
@@ -89,7 +91,9 @@ export interface backendInterface {
     getTeamById(teamId: TeamId): Promise<Team | null>;
     getTeams(): Promise<Array<Team>>;
     initialize(): Promise<boolean>;
+    markPlayerUnsold(): Promise<Result>;
     placeBid(teamId: TeamId): Promise<Result>;
+    putPlayerBackToAuction(playerId: PlayerId): Promise<Result>;
     resetAuction(): Promise<void>;
     selectPlayer(playerId: PlayerId): Promise<Result>;
     sellPlayer(): Promise<Result>;

@@ -125,6 +125,7 @@ export interface PlayerWithTeam {
 }
 export interface Dashboard {
     remainingPlayers: bigint;
+    unsoldPlayers: bigint;
     totalSpent: Amount;
     mostExpensivePlayer?: Player;
     soldPlayers: bigint;
@@ -158,7 +159,8 @@ export enum Category {
 export enum Status {
     upcoming = "upcoming",
     live = "live",
-    sold = "sold"
+    sold = "sold",
+    unsold = "unsold"
 }
 export interface backendInterface {
     _caffeineStorageBlobIsLive(hash: Uint8Array): Promise<boolean>;
@@ -181,7 +183,9 @@ export interface backendInterface {
     getTeamById(teamId: TeamId): Promise<Team | null>;
     getTeams(): Promise<Array<Team>>;
     initialize(): Promise<boolean>;
+    markPlayerUnsold(): Promise<Result>;
     placeBid(teamId: TeamId): Promise<Result>;
+    putPlayerBackToAuction(playerId: PlayerId): Promise<Result>;
     resetAuction(): Promise<void>;
     selectPlayer(playerId: PlayerId): Promise<Result>;
     sellPlayer(): Promise<Result>;
@@ -473,6 +477,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async markPlayerUnsold(): Promise<Result> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.markPlayerUnsold();
+                return from_candid_Result_n10(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.markPlayerUnsold();
+            return from_candid_Result_n10(this._uploadFile, this._downloadFile, result);
+        }
+    }
     async placeBid(arg0: TeamId): Promise<Result> {
         if (this.processError) {
             try {
@@ -484,6 +502,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.placeBid(arg0);
+            return from_candid_Result_n10(this._uploadFile, this._downloadFile, result);
+        }
+    }
+    async putPlayerBackToAuction(arg0: PlayerId): Promise<Result> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.putPlayerBackToAuction(arg0);
+                return from_candid_Result_n10(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.putPlayerBackToAuction(arg0);
             return from_candid_Result_n10(this._uploadFile, this._downloadFile, result);
         }
     }
@@ -663,17 +695,20 @@ function from_candid_record_n13(_uploadFile: (file: ExternalBlob) => Promise<Uin
 }
 function from_candid_record_n17(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     remainingPlayers: bigint;
+    unsoldPlayers: bigint;
     totalSpent: _Amount;
     mostExpensivePlayer: [] | [_Player];
     soldPlayers: bigint;
 }): {
     remainingPlayers: bigint;
+    unsoldPlayers: bigint;
     totalSpent: Amount;
     mostExpensivePlayer?: Player;
     soldPlayers: bigint;
 } {
     return {
         remainingPlayers: value.remainingPlayers,
+        unsoldPlayers: value.unsoldPlayers,
         totalSpent: value.totalSpent,
         mostExpensivePlayer: record_opt_to_undefined(from_candid_opt_n18(_uploadFile, _downloadFile, value.mostExpensivePlayer)),
         soldPlayers: value.soldPlayers
@@ -794,8 +829,10 @@ function from_candid_variant_n22(_uploadFile: (file: ExternalBlob) => Promise<Ui
     live: null;
 } | {
     sold: null;
+} | {
+    unsold: null;
 }): Status {
-    return "upcoming" in value ? Status.upcoming : "live" in value ? Status.live : "sold" in value ? Status.sold : value;
+    return "upcoming" in value ? Status.upcoming : "live" in value ? Status.live : "sold" in value ? Status.sold : "unsold" in value ? Status.unsold : value;
 }
 function from_candid_variant_n25(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     bowler: null;

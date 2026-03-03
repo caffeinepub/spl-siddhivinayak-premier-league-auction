@@ -39,6 +39,7 @@ export const Status = IDL.Variant({
   'upcoming' : IDL.Null,
   'live' : IDL.Null,
   'sold' : IDL.Null,
+  'unsold' : IDL.Null,
 });
 export const Player = IDL.Record({
   'id' : PlayerId,
@@ -53,6 +54,7 @@ export const Player = IDL.Record({
 });
 export const Dashboard = IDL.Record({
   'remainingPlayers' : IDL.Nat,
+  'unsoldPlayers' : IDL.Nat,
   'totalSpent' : Amount,
   'mostExpensivePlayer' : IDL.Opt(Player),
   'soldPlayers' : IDL.Nat,
@@ -120,7 +122,9 @@ export const idlService = IDL.Service({
   'getTeamById' : IDL.Func([TeamId], [IDL.Opt(Team)], ['query']),
   'getTeams' : IDL.Func([], [IDL.Vec(Team)], ['query']),
   'initialize' : IDL.Func([], [IDL.Bool], []),
+  'markPlayerUnsold' : IDL.Func([], [Result], []),
   'placeBid' : IDL.Func([TeamId], [Result], []),
+  'putPlayerBackToAuction' : IDL.Func([PlayerId], [Result], []),
   'resetAuction' : IDL.Func([], [], []),
   'selectPlayer' : IDL.Func([PlayerId], [Result], []),
   'sellPlayer' : IDL.Func([], [Result], []),
@@ -168,6 +172,7 @@ export const idlFactory = ({ IDL }) => {
     'upcoming' : IDL.Null,
     'live' : IDL.Null,
     'sold' : IDL.Null,
+    'unsold' : IDL.Null,
   });
   const Player = IDL.Record({
     'id' : PlayerId,
@@ -182,6 +187,7 @@ export const idlFactory = ({ IDL }) => {
   });
   const Dashboard = IDL.Record({
     'remainingPlayers' : IDL.Nat,
+    'unsoldPlayers' : IDL.Nat,
     'totalSpent' : Amount,
     'mostExpensivePlayer' : IDL.Opt(Player),
     'soldPlayers' : IDL.Nat,
@@ -249,7 +255,9 @@ export const idlFactory = ({ IDL }) => {
     'getTeamById' : IDL.Func([TeamId], [IDL.Opt(Team)], ['query']),
     'getTeams' : IDL.Func([], [IDL.Vec(Team)], ['query']),
     'initialize' : IDL.Func([], [IDL.Bool], []),
+    'markPlayerUnsold' : IDL.Func([], [Result], []),
     'placeBid' : IDL.Func([TeamId], [Result], []),
+    'putPlayerBackToAuction' : IDL.Func([PlayerId], [Result], []),
     'resetAuction' : IDL.Func([], [], []),
     'selectPlayer' : IDL.Func([PlayerId], [Result], []),
     'sellPlayer' : IDL.Func([], [Result], []),

@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AuctionState, Dashboard, Player, Team } from "../backend.d";
+import {
+  isSettingsPlayer,
+  loadSettingsFromBackend,
+} from "../utils/settingsStore";
+import { syncSettingsToOffline, syncToOffline } from "../utils/syncToOffline";
 import { useActor } from "./useActor";
 
 export interface AuctionData {
@@ -30,6 +35,8 @@ export function useAuctionData(intervalMs = 3000): AuctionData {
   const consecutiveErrorsRef = useRef(0);
   const isFetchingDataRef = useRef(false);
   const mountedRef = useRef(true);
+  // Only load settings once per actor instance to avoid expensive polling
+  const settingsSyncedRef = useRef(false);
 
   const clearTimers = useCallback(() => {
     if (intervalRef.current) {
@@ -59,12 +66,30 @@ export function useAuctionData(intervalMs = 3000): AuctionData {
 
       if (!mountedRef.current) return;
 
+      // Filter out the hidden settings player so it never appears in UI
+      const visiblePlayers = playersData.filter((p) => !isSettingsPlayer(p));
+
       setAuctionState(state);
       setTeams(teamsData);
-      setPlayers(playersData);
+      setPlayers(visiblePlayers);
       setDashboard(dashData);
       setError(null);
       consecutiveErrorsRef.current = 0;
+
+      // Auto-sync latest online data to offline localStorage backup
+      // Runs silently — never throws, never affects online functionality
+      syncToOffline(teamsData, visiblePlayers, state, dashData);
+
+      // On first successful fetch, load settings from backend and mirror
+      // them to localStorage so offline mode and other devices stay in sync.
+      if (!settingsSyncedRef.current) {
+        settingsSyncedRef.current = true;
+        loadSettingsFromBackend(actor).then((settings) => {
+          if (settings && mountedRef.current) {
+            syncSettingsToOffline(settings);
+          }
+        });
+      }
     } catch (err) {
       if (!mountedRef.current) return;
       consecutiveErrorsRef.current += 1;
@@ -107,6 +132,7 @@ export function useAuctionData(intervalMs = 3000): AuctionData {
     if (!actor || isFetching) return;
 
     consecutiveErrorsRef.current = 0;
+    settingsSyncedRef.current = false; // Reset so we re-sync settings on new actor
     setError(null);
     isFetchingDataRef.current = false;
     clearTimers();

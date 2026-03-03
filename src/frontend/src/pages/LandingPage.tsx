@@ -9,6 +9,7 @@ export interface LeagueSettings {
   logoUrl: string;
   logoSize: number; // 50–200, default 100
   nameSize: number; // 50–200, default 100
+  auctionYear: string; // e.g. "PLAYER AUCTION 2026"
 }
 
 export const LEAGUE_KEY = "spl_league_settings";
@@ -20,6 +21,7 @@ export function getLeagueSettings(): LeagueSettings {
     logoUrl: "",
     logoSize: 100,
     nameSize: 100,
+    auctionYear: "PLAYER AUCTION 2026",
   };
   try {
     const raw = localStorage.getItem(LEAGUE_KEY);
@@ -32,7 +34,14 @@ export function getLeagueSettings(): LeagueSettings {
 }
 
 export function saveLeagueSettings(s: LeagueSettings) {
-  localStorage.setItem(LEAGUE_KEY, JSON.stringify(s));
+  try {
+    localStorage.setItem(LEAGUE_KEY, JSON.stringify(s));
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "QuotaExceededError") {
+      throw new Error("Storage full — try a smaller logo image (under 200KB)");
+    }
+    throw e;
+  }
 }
 
 // ─── Team logos helpers ───────────────────────────────────────────────────────
@@ -49,7 +58,14 @@ export function getTeamLogos(): Record<string, string> {
 }
 
 export function saveTeamLogos(logos: Record<string, string>) {
-  localStorage.setItem(TEAM_LOGOS_KEY, JSON.stringify(logos));
+  try {
+    localStorage.setItem(TEAM_LOGOS_KEY, JSON.stringify(logos));
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "QuotaExceededError") {
+      throw new Error("Storage full — try a smaller image (under 200KB)");
+    }
+    throw e;
+  }
 }
 
 // ─── Owner photos helpers ─────────────────────────────────────────────────────
@@ -66,7 +82,14 @@ export function getOwnerPhotos(): Record<string, string> {
 }
 
 export function saveOwnerPhotos(photos: Record<string, string>) {
-  localStorage.setItem(OWNER_PHOTOS_KEY, JSON.stringify(photos));
+  try {
+    localStorage.setItem(OWNER_PHOTOS_KEY, JSON.stringify(photos));
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "QuotaExceededError") {
+      throw new Error("Storage full — try a smaller image (under 200KB)");
+    }
+    throw e;
+  }
 }
 
 // ─── Icon player photos helpers ───────────────────────────────────────────────
@@ -83,7 +106,108 @@ export function getIconPhotos(): Record<string, string> {
 }
 
 export function saveIconPhotos(photos: Record<string, string>) {
-  localStorage.setItem(ICON_PHOTOS_KEY, JSON.stringify(photos));
+  try {
+    localStorage.setItem(ICON_PHOTOS_KEY, JSON.stringify(photos));
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "QuotaExceededError") {
+      throw new Error("Storage full — try a smaller image (under 200KB)");
+    }
+    throw e;
+  }
+}
+
+// ─── Live Colour Theme helpers ────────────────────────────────────────────────
+export interface LiveColorTheme {
+  // Backgrounds
+  pageBg: string; // main page background
+  headerBg: string; // header bar background
+  rightPanelBg: string; // right panel background
+  playerImageBg: string; // player photo placeholder bg
+  // Accents & highlights
+  goldAccent: string; // primary gold/accent colour (bid counter, headings)
+  silverAccent: string; // secondary accent colour
+  // Text colours
+  primaryText: string; // player name, main labels
+  secondaryText: string; // sub-labels, captions
+  // Bid counter
+  bidCounterColor: string; // bid number colour
+  bidCounterGlow: string; // bid glow colour
+  // Leading team banner
+  leadingTeamBg: string;
+  leadingTeamText: string;
+  // Team table
+  teamRowBg: string;
+  teamRowLeadingBg: string;
+  teamRowLeadingBorder: string;
+  teamRowText: string;
+  teamRowLeadingText: string;
+  // Chart bars
+  chartBarDefault: string;
+  chartBarLeading: string;
+  // Category badges
+  batsmanColor: string;
+  bowlerColor: string;
+  allrounderColor: string;
+  // SOLD overlay
+  soldBannerBg: string;
+  soldBannerBorder: string;
+  soldTextColor: string;
+  // LIVE indicator dot
+  liveDotColor: string;
+  // Decorative grid
+  gridColor: string;
+  atmosphereBg: string;
+}
+
+export const LIVE_COLOR_KEY = "spl_live_colors";
+
+export const DEFAULT_LIVE_COLORS: LiveColorTheme = {
+  pageBg: "#0a0c1a",
+  headerBg: "#0e1128",
+  rightPanelBg: "#080a17",
+  playerImageBg: "#111830",
+  goldAccent: "#d4af37",
+  silverAccent: "#a8b4c4",
+  primaryText: "#f5f0e8",
+  secondaryText: "#6b7080",
+  bidCounterColor: "#d4af37",
+  bidCounterGlow: "#d4af3788",
+  leadingTeamBg: "#d4af3718",
+  leadingTeamText: "#e8c84a",
+  teamRowBg: "#0f1225",
+  teamRowLeadingBg: "#d4af3714",
+  teamRowLeadingBorder: "#d4af3766",
+  teamRowText: "#9099aa",
+  teamRowLeadingText: "#e8c84a",
+  chartBarDefault: "#1e2a5e",
+  chartBarLeading: "#d4af37",
+  batsmanColor: "#4ade80",
+  bowlerColor: "#f87171",
+  allrounderColor: "#d4af37",
+  soldBannerBg: "#0d1020",
+  soldBannerBorder: "#d4af37",
+  soldTextColor: "#d4af37",
+  liveDotColor: "#ef4444",
+  gridColor: "#d4af37",
+  atmosphereBg: "#1a2a6c",
+};
+
+export function getLiveColors(): LiveColorTheme {
+  try {
+    const raw = localStorage.getItem(LIVE_COLOR_KEY);
+    if (raw)
+      return {
+        ...DEFAULT_LIVE_COLORS,
+        ...(JSON.parse(raw) as Partial<LiveColorTheme>),
+      };
+  } catch {
+    // ignore
+  }
+  return { ...DEFAULT_LIVE_COLORS };
+}
+
+export function saveLiveColors(c: LiveColorTheme) {
+  localStorage.setItem(LIVE_COLOR_KEY, JSON.stringify(c));
 }
 
 // ─── Live Layout helpers ──────────────────────────────────────────────────────
@@ -359,6 +483,26 @@ export default function LandingPage() {
             </div>
           ))}
         </motion.div>
+      </motion.div>
+
+      {/* Offline Backup link */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 1.1 }}
+        className="absolute bottom-16 left-0 right-0 text-center z-10"
+      >
+        <a
+          href="/offline"
+          className="inline-flex items-center gap-1.5 px-4 py-1.5 font-broadcast tracking-widest text-xs transition-all hover:opacity-90"
+          style={{
+            background: "oklch(0.55 0.18 55 / 0.12)",
+            border: "1px solid oklch(0.55 0.18 55 / 0.4)",
+            color: "oklch(0.72 0.18 55)",
+          }}
+        >
+          ⚡ OFFLINE BACKUP →
+        </a>
       </motion.div>
 
       {/* Footer */}

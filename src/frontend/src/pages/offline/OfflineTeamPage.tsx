@@ -2,17 +2,17 @@ import { useParams } from "@tanstack/react-router";
 import { Crown, Star } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
-import type { Player, Team } from "../backend.d";
-import { useActor } from "../hooks/useActor";
+import type { OfflinePlayer, OfflineTeam } from "../../offlineStore";
+import { offlineStore } from "../../offlineStore";
 import {
   getIconPhotos,
   getLeagueSettings,
   getOwnerPhotos,
   getTeamLogos,
-} from "./LandingPage";
+} from "../LandingPage";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
-function fmt(n: bigint | number) {
+function fmt(n: number) {
   return Number(n).toLocaleString();
 }
 
@@ -70,7 +70,6 @@ function PlayerCard({
           : `1px solid ${accentColor}33`,
       }}
     >
-      {/* Slot label */}
       <div
         className="px-2 py-1 font-broadcast tracking-widest"
         style={{
@@ -82,8 +81,6 @@ function PlayerCard({
       >
         {slotLabel}
       </div>
-
-      {/* Photo */}
       <div
         style={{
           width: "100%",
@@ -116,8 +113,6 @@ function PlayerCard({
             {name[0]?.toUpperCase()}
           </div>
         )}
-
-        {/* Icon badge */}
         {icon && !isEmpty && (
           <div
             className="absolute top-1.5 right-1.5 rounded-full p-1"
@@ -126,8 +121,6 @@ function PlayerCard({
             {icon}
           </div>
         )}
-
-        {/* Bottom accent bar */}
         {!isEmpty && (
           <div
             className="absolute bottom-0 left-0 right-0"
@@ -135,8 +128,6 @@ function PlayerCard({
           />
         )}
       </div>
-
-      {/* Info */}
       <div className="p-2 space-y-0.5">
         <div
           className="font-broadcast tracking-wide leading-tight"
@@ -168,60 +159,47 @@ function PlayerCard({
   );
 }
 
-// ─── Main TeamPage ────────────────────────────────────────────────────────────
-export default function TeamPage() {
-  const params = useParams({ from: "/team/$teamId" });
-  const teamId = BigInt(params.teamId ?? "0");
-  const { actor } = useActor();
+// ─── Main OfflineTeamPage ─────────────────────────────────────────────────────
+export default function OfflineTeamPage() {
+  const params = useParams({ from: "/offline/team/$teamId" });
+  const teamId = Number(params.teamId ?? "0");
   const league = getLeagueSettings();
   const teamLogos = getTeamLogos();
   const ownerPhotos = getOwnerPhotos();
   const iconPhotos = getIconPhotos();
 
-  const [team, setTeam] = useState<Team | null>(null);
-  const [players, setPlayers] = useState<Player[]>([]);
+  const [team, setTeam] = useState<OfflineTeam | null>(null);
+  const [players, setPlayers] = useState<OfflinePlayer[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
   useEffect(() => {
-    if (!actor) return;
-
-    const fetchData = async () => {
-      try {
-        const [t, ps] = await Promise.all([
-          actor.getTeamById(teamId),
-          actor.getPlayers(),
-        ]);
-        setTeam(t);
-        setPlayers(ps);
-        setLastUpdated(new Date());
-      } catch {
-        // Silently fail on polling errors
-      } finally {
-        setLoading(false);
-      }
+    const fetchData = () => {
+      const t = offlineStore.getTeamById(teamId);
+      const ps = offlineStore.getPlayers();
+      setTeam(t);
+      setPlayers(ps);
+      setLastUpdated(new Date());
+      setLoading(false);
     };
 
     fetchData();
-    const interval = setInterval(fetchData, 10000);
+    const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
-  }, [actor, teamId]);
+  }, [teamId]);
 
   const teamLogoUrl = teamLogos[String(teamId)] ?? "";
   const ownerPhotoUrl = ownerPhotos[String(teamId)] ?? "";
   const iconPhotoUrl = iconPhotos[String(teamId)] ?? "";
 
   const boughtPlayers = players
-    .filter((p) => p.status === "sold" && String(p.soldTo) === String(teamId))
-    .sort((a, b) => Number(b.soldPrice ?? 0n) - Number(a.soldPrice ?? 0n));
+    .filter((p) => p.status === "sold" && p.soldTo === teamId)
+    .sort((a, b) => (b.soldPrice ?? 0) - (a.soldPrice ?? 0));
 
-  const purseUsed = team
-    ? Number(team.purseAmountTotal) - Number(team.purseAmountLeft)
-    : 0;
-
+  const purseUsed = team ? team.purseAmountTotal - team.purseAmountLeft : 0;
   const pctLeft =
-    team && Number(team.purseAmountTotal) > 0
-      ? (Number(team.purseAmountLeft) / Number(team.purseAmountTotal)) * 100
+    team && team.purseAmountTotal > 0
+      ? (team.purseAmountLeft / team.purseAmountTotal) * 100
       : 0;
 
   if (loading) {
@@ -263,7 +241,7 @@ export default function TeamPage() {
             className="font-broadcast text-sm"
             style={{ color: "oklch(0.45 0.02 90)" }}
           >
-            Team ID {String(teamId)} does not exist.
+            Team ID {teamId} does not exist.
           </p>
         </div>
       </div>
@@ -272,7 +250,21 @@ export default function TeamPage() {
 
   return (
     <div className="min-h-screen bg-background broadcast-overlay">
-      {/* Background */}
+      {/* OFFLINE badge */}
+      <div className="fixed top-3 right-3 z-40 pointer-events-none">
+        <div
+          className="font-broadcast tracking-widest px-3 py-1.5"
+          style={{
+            background: "oklch(0.55 0.18 55 / 0.9)",
+            border: "1px solid oklch(0.72 0.18 55)",
+            color: "oklch(0.97 0.02 90)",
+            fontSize: 9,
+          }}
+        >
+          ⚡ OFFLINE MODE
+        </div>
+      </div>
+
       <div
         className="fixed inset-0 pointer-events-none"
         style={{
@@ -281,12 +273,10 @@ export default function TeamPage() {
         }}
       />
 
-      {/* Header */}
       <header
         className="relative z-10 flex items-center justify-between px-5 py-4"
         style={{ borderBottom: "1px solid oklch(0.78 0.165 85 / 0.18)" }}
       >
-        {/* League name */}
         <div className="flex items-center gap-2">
           {league.logoUrl ? (
             <img
@@ -309,8 +299,6 @@ export default function TeamPage() {
             SQUAD
           </span>
         </div>
-
-        {/* Live badge */}
         <div className="flex items-center gap-1.5">
           <motion.div
             animate={{ opacity: [1, 0.3, 1] }}
@@ -322,14 +310,12 @@ export default function TeamPage() {
             className="font-broadcast text-xs tracking-widest"
             style={{ color: "oklch(0.45 0.12 140)" }}
           >
-            UPDATES EVERY 10s
+            UPDATES EVERY 5s
           </span>
         </div>
       </header>
 
-      {/* Team hero */}
       <section className="relative z-10 px-5 py-6 text-center">
-        {/* Logo */}
         {teamLogoUrl ? (
           <img
             src={teamLogoUrl}
@@ -359,24 +345,18 @@ export default function TeamPage() {
             {teamInitials(team.name).slice(0, 2)}
           </div>
         )}
-
-        {/* Name */}
         <h1
           className="font-broadcast tracking-wider mb-1"
           style={{ fontSize: 28, color: "oklch(0.78 0.165 85)" }}
         >
           {team.name.toUpperCase()}
         </h1>
-
-        {/* Sub info */}
         <p
           className="font-broadcast tracking-widest mb-5"
           style={{ fontSize: 11, color: "oklch(0.45 0.02 90)" }}
         >
           OWNER: {team.ownerName.toUpperCase()}
         </p>
-
-        {/* Purse stats */}
         <div className="flex items-center justify-center gap-8 mb-3 flex-wrap">
           {[
             {
@@ -391,7 +371,7 @@ export default function TeamPage() {
             },
             {
               label: "PLAYERS",
-              value: `${Number(team.numberOfPlayers)} / 7`,
+              value: `${team.numberOfPlayers} / 7`,
               color: "oklch(0.65 0.12 140)",
             },
           ].map((stat) => (
@@ -411,8 +391,6 @@ export default function TeamPage() {
             </div>
           ))}
         </div>
-
-        {/* Purse bar */}
         <div
           className="mx-auto rounded-full overflow-hidden mb-1"
           style={{
@@ -440,8 +418,6 @@ export default function TeamPage() {
         >
           {Math.round(pctLeft)}% PURSE REMAINING
         </div>
-
-        {/* Locked badge */}
         {team.isTeamLocked && (
           <div
             className="inline-block mt-3 px-4 py-1 font-broadcast tracking-widest"
@@ -457,7 +433,6 @@ export default function TeamPage() {
         )}
       </section>
 
-      {/* Squad grid */}
       <section className="relative z-10 px-4 pb-8">
         <div
           className="font-broadcast tracking-widest mb-3"
@@ -466,7 +441,6 @@ export default function TeamPage() {
           ALL 9 SLOTS
         </div>
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
-          {/* Slot 1: Owner */}
           <PlayerCard
             slotLabel="OWNER"
             name={team.ownerName}
@@ -477,7 +451,6 @@ export default function TeamPage() {
             accentColor="oklch(0.78 0.165 85)"
             icon={<Crown size={8} style={{ color: "oklch(0.08 0.02 265)" }} />}
           />
-          {/* Slot 2: Icon */}
           <PlayerCard
             slotLabel="ICON PLAYER"
             name={team.teamIconPlayer}
@@ -488,7 +461,6 @@ export default function TeamPage() {
             accentColor="oklch(0.7 0.12 60)"
             icon={<Star size={8} style={{ color: "oklch(0.08 0.02 265)" }} />}
           />
-          {/* Slots 3-9: Auction */}
           {Array.from({ length: 7 }).map((_, i) => {
             const player = boughtPlayers[i];
             const slotNum = i + 3;
@@ -496,12 +468,12 @@ export default function TeamPage() {
               const catColor = getCategoryColor(player.category);
               return (
                 <PlayerCard
-                  key={String(player.id)}
+                  key={player.id}
                   slotLabel={`SLOT ${slotNum}`}
                   name={player.name}
                   photo={player.imageUrl}
                   subLabel={player.category.toUpperCase()}
-                  price={`${fmt(player.soldPrice ?? 0n)} PTS`}
+                  price={`${fmt(player.soldPrice ?? 0)} PTS`}
                   priceColor={catColor}
                   accentColor={catColor}
                 />
@@ -524,7 +496,6 @@ export default function TeamPage() {
         </div>
       </section>
 
-      {/* Last updated */}
       <div className="relative z-10 text-center pb-4">
         <p
           className="font-broadcast tracking-widest"
@@ -534,7 +505,6 @@ export default function TeamPage() {
         </p>
       </div>
 
-      {/* Footer */}
       <footer
         className="relative z-10 text-center py-4 text-xs"
         style={{ color: "oklch(0.28 0.02 90)" }}

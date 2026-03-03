@@ -9,7 +9,6 @@ import {
   Coins,
   Download,
   Edit3,
-  Loader2,
   Lock,
   Plus,
   RotateCcw,
@@ -20,19 +19,19 @@ import {
   Undo2,
   UndoDot,
   Users,
+  WifiOff,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import type { Player, Team } from "../backend.d";
-import { useActor } from "../hooks/useActor";
-import { useAuctionData } from "../hooks/useAuctionData";
-import { isSettingsPlayer } from "../utils/settingsStore";
-import { getTeamLogos } from "./LandingPage";
+import { useOfflineAuctionData } from "../../hooks/useOfflineAuctionData";
+import type { OfflinePlayer, OfflineTeam } from "../../offlineStore";
+import { offlineStore } from "../../offlineStore";
+import { getTeamLogos } from "../LandingPage";
 
 // ─── Admin password ────────────────────────────────────────────────────────────
 const ADMIN_PASSWORD = "SPL@2026";
-const AUTH_KEY = "spl_admin_auth";
+const AUTH_KEY = "spl_offline_admin_auth";
 
 // ─── Category display helpers ─────────────────────────────────────────────────
 function getCategoryColor(category: string): string {
@@ -71,19 +70,12 @@ function CategoryBadge({ category }: { category: string }) {
 function PasswordGate({ onAuth }: { onAuth: () => void }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const { actor } = useActor();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (password === ADMIN_PASSWORD) {
       localStorage.setItem(AUTH_KEY, "1");
       onAuth();
-      // Background verification
-      if (actor) {
-        actor.adminLogin(password).catch(() => {
-          // ignore — local check already passed
-        });
-      }
     } else {
       setError("Invalid password. Access denied.");
     }
@@ -107,10 +99,25 @@ function PasswordGate({ onAuth }: { onAuth: () => void }) {
           className="p-8"
           style={{
             background: "oklch(0.12 0.03 255 / 0.95)",
-            border: "1px solid oklch(0.78 0.165 85 / 0.3)",
-            boxShadow: "0 0 60px oklch(0.78 0.165 85 / 0.1)",
+            border: "1px solid oklch(0.82 0.18 65 / 0.4)",
+            boxShadow: "0 0 60px oklch(0.82 0.18 65 / 0.1)",
           }}
         >
+          {/* Offline badge */}
+          <div className="flex justify-center mb-4">
+            <span
+              className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-broadcast tracking-widest"
+              style={{
+                background: "oklch(0.82 0.18 65 / 0.12)",
+                border: "1px solid oklch(0.82 0.18 65 / 0.4)",
+                color: "oklch(0.88 0.18 68)",
+              }}
+            >
+              <WifiOff size={10} />
+              OFFLINE MODE
+            </span>
+          </div>
+
           <div className="text-center mb-8">
             <div
               className="w-16 h-16 mx-auto mb-4 flex items-center justify-center"
@@ -131,21 +138,21 @@ function PasswordGate({ onAuth }: { onAuth: () => void }) {
               className="text-sm mt-2"
               style={{ color: "oklch(0.42 0.02 90)" }}
             >
-              SPL 2026 Auction Control Panel
+              SPL 2026 Offline Auction Control
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label
-                htmlFor="admin-password"
+                htmlFor="offline-admin-password"
                 className="block text-xs font-broadcast tracking-widest mb-2"
                 style={{ color: "oklch(0.52 0.02 90)" }}
               >
                 PASSWORD
               </label>
               <input
-                id="admin-password"
+                id="offline-admin-password"
                 type="password"
                 value={password}
                 onChange={(e) => {
@@ -207,19 +214,16 @@ function EditPurseModal({
   onClose,
   onSave,
 }: {
-  team: Team;
+  team: OfflineTeam;
   onClose: () => void;
-  onSave: (teamId: bigint, newPurse: bigint) => Promise<void>;
+  onSave: (teamId: number, newPurse: number) => void;
 }) {
-  const [value, setValue] = useState(String(Number(team.purseAmountLeft)));
-  const [isSaving, setIsSaving] = useState(false);
+  const [value, setValue] = useState(String(team.purseAmountLeft));
 
-  const handleSave = async () => {
+  const handleSave = () => {
     const num = Number.parseInt(value, 10);
     if (Number.isNaN(num) || num < 0) return;
-    setIsSaving(true);
-    await onSave(team.id, BigInt(num));
-    setIsSaving(false);
+    onSave(team.id, num);
     onClose();
   };
 
@@ -273,15 +277,13 @@ function EditPurseModal({
           <button
             type="button"
             onClick={handleSave}
-            disabled={isSaving}
-            className="flex-1 py-2 text-sm font-broadcast tracking-wider flex items-center justify-center gap-2 disabled:opacity-60"
+            className="flex-1 py-2 text-sm font-broadcast tracking-wider"
             style={{
               background:
                 "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))",
               color: "oklch(0.08 0.025 265)",
             }}
           >
-            {isSaving ? <Loader2 size={14} className="animate-spin" /> : null}
             SAVE
           </button>
         </div>
@@ -297,22 +299,13 @@ function UnsellModal({
   onClose,
   onConfirm,
 }: {
-  player: Player;
-  team: Team | null;
+  player: OfflinePlayer;
+  team: OfflineTeam | null;
   onClose: () => void;
-  onConfirm: () => Promise<void>;
+  onConfirm: () => void;
 }) {
-  const [isExecuting, setIsExecuting] = useState(false);
-
-  const handleConfirm = async () => {
-    setIsExecuting(true);
-    await onConfirm();
-    setIsExecuting(false);
-    onClose();
-  };
-
   const restoredPurse = team
-    ? Number(team.purseAmountLeft) + Number(player.soldPrice ?? 0)
+    ? team.purseAmountLeft + (player.soldPrice ?? 0)
     : null;
 
   return (
@@ -390,7 +383,7 @@ function UnsellModal({
             </span>
             <span className="font-digital">
               {player.soldPrice !== undefined
-                ? Number(player.soldPrice).toLocaleString()
+                ? player.soldPrice.toLocaleString()
                 : "—"}
             </span>{" "}
             pts
@@ -412,16 +405,15 @@ function UnsellModal({
         </div>
 
         <p className="text-xs mb-4" style={{ color: "oklch(0.52 0.02 90)" }}>
-          The team's purse will be restored automatically. The player will be
-          re-added to the upcoming pool.
+          The team's purse will be restored. The player will be re-added to the
+          upcoming pool.
         </p>
 
         <div className="flex gap-3">
           <button
             type="button"
             onClick={onClose}
-            disabled={isExecuting}
-            className="flex-1 py-2.5 text-sm font-broadcast tracking-wider disabled:opacity-50"
+            className="flex-1 py-2.5 text-sm font-broadcast tracking-wider"
             style={{
               background: "oklch(0.16 0.03 255)",
               border: "1px solid oklch(0.25 0.03 255)",
@@ -432,21 +424,19 @@ function UnsellModal({
           </button>
           <button
             type="button"
-            onClick={handleConfirm}
-            disabled={isExecuting}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-broadcast tracking-wider hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed"
+            onClick={() => {
+              onConfirm();
+              onClose();
+            }}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-broadcast tracking-wider hover:opacity-90"
             style={{
               background: "oklch(0.82 0.14 55 / 0.18)",
               border: "1px solid oklch(0.82 0.14 55 / 0.5)",
               color: "oklch(0.82 0.14 55)",
             }}
           >
-            {isExecuting ? (
-              <Loader2 size={13} className="animate-spin" />
-            ) : (
-              <UndoDot size={13} />
-            )}
-            {isExecuting ? "PROCESSING…" : "CONFIRM UNSELL"}
+            <UndoDot size={13} />
+            CONFIRM UNSELL
           </button>
         </div>
       </motion.div>
@@ -463,15 +453,15 @@ function TeamCard({
   onPlaceBid,
   onEditPurse,
 }: {
-  team: Team;
+  team: OfflineTeam;
   isLeading: boolean;
   currentBid: number;
   auctionActive: boolean;
-  onPlaceBid: (teamId: bigint) => void;
-  onEditPurse: (team: Team) => void;
+  onPlaceBid: (teamId: number) => void;
+  onEditPurse: (team: OfflineTeam) => void;
 }) {
-  const remainingSlots = 7 - Number(team.numberOfPlayers);
-  const purseRemaining = Number(team.purseAmountLeft);
+  const remainingSlots = 7 - team.numberOfPlayers;
+  const purseRemaining = team.purseAmountLeft;
   const newBid = currentBid + 100;
   const minRequired = remainingSlots > 1 ? (remainingSlots - 1) * 100 : 0;
   const canBid =
@@ -588,7 +578,7 @@ function TeamCard({
             className="font-digital font-bold"
             style={{ color: "oklch(0.7 0.15 140)", fontSize: "13px" }}
           >
-            {Number(team.numberOfPlayers)}/7
+            {team.numberOfPlayers}/7
           </div>
           <div
             className="text-xs"
@@ -673,15 +663,15 @@ function RemainingPlayersPanel({
   auctionActive,
   onSelect,
 }: {
-  players: Player[];
+  players: OfflinePlayer[];
   auctionActive: boolean;
-  onSelect: (id: bigint) => void;
+  onSelect: (id: number) => void;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const upcomingPlayers = players.filter((p) => p.status === "upcoming");
   if (upcomingPlayers.length === 0) return null;
 
-  const byCategory: Record<string, Player[]> = {};
+  const byCategory: Record<string, OfflinePlayer[]> = {};
   for (const p of upcomingPlayers) {
     const key = p.category;
     if (!byCategory[key]) byCategory[key] = [];
@@ -753,7 +743,7 @@ function RemainingPlayersPanel({
                     <div className="space-y-1">
                       {catPlayers.map((player) => (
                         <div
-                          key={String(player.id)}
+                          key={player.id}
                           className="flex items-center gap-2 px-2 py-1.5"
                           style={{
                             background: "oklch(0.09 0.02 255)",
@@ -772,10 +762,6 @@ function RemainingPlayersPanel({
                                 src={player.imageUrl}
                                 alt={player.name}
                                 className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).style.display =
-                                    "none";
-                                }}
                               />
                             ) : (
                               <span
@@ -801,7 +787,7 @@ function RemainingPlayersPanel({
                               className="font-digital"
                               style={{ color, fontSize: "9px" }}
                             >
-                              {Number(player.basePrice).toLocaleString()} pts
+                              {player.basePrice.toLocaleString()} pts
                             </div>
                           </div>
                           <button
@@ -838,22 +824,21 @@ function UnsoldPlayersPanel({
   auctionActive,
   onPutBack,
 }: {
-  players: Player[];
+  players: OfflinePlayer[];
   auctionActive: boolean;
-  onPutBack: (id: bigint) => void;
+  onPutBack: (id: number) => void;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const unsoldPlayers = players.filter((p) => p.status === "unsold");
   if (unsoldPlayers.length === 0) return null;
 
-  const byCategory: Record<string, Player[]> = {};
+  const byCategory: Record<string, OfflinePlayer[]> = {};
   for (const p of unsoldPlayers) {
     const key = p.category;
     if (!byCategory[key]) byCategory[key] = [];
     byCategory[key].push(p);
   }
 
-  // Amber color for unsold theme
   const amberColor = "oklch(0.82 0.18 65)";
 
   return (
@@ -923,7 +908,7 @@ function UnsoldPlayersPanel({
                     <div className="space-y-1">
                       {catPlayers.map((player) => (
                         <div
-                          key={String(player.id)}
+                          key={player.id}
                           className="flex items-center gap-2 px-2 py-1.5"
                           style={{
                             background: "oklch(0.09 0.02 255)",
@@ -942,10 +927,6 @@ function UnsoldPlayersPanel({
                                 src={player.imageUrl}
                                 alt={player.name}
                                 className="w-full h-full object-cover"
-                                onError={(e) => {
-                                  (e.target as HTMLImageElement).style.display =
-                                    "none";
-                                }}
                               />
                             ) : (
                               <span
@@ -973,7 +954,7 @@ function UnsoldPlayersPanel({
                                 className="font-digital"
                                 style={{ color: amberColor, fontSize: "9px" }}
                               >
-                                {Number(player.basePrice).toLocaleString()} pts
+                                {player.basePrice.toLocaleString()} pts
                               </span>
                             </div>
                           </div>
@@ -1005,96 +986,28 @@ function UnsoldPlayersPanel({
   );
 }
 
-// ─── Connecting Screen ─────────────────────────────────────────────────────────
-function ConnectingScreen({ onRetry }: { onRetry: () => void }) {
-  return (
-    <div className="min-h-screen bg-background flex items-center justify-center broadcast-overlay">
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          background:
-            "radial-gradient(ellipse 60% 50% at 50% 50%, oklch(0.15 0.06 255 / 0.6) 0%, transparent 70%)",
-        }}
-      />
-      <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="relative z-10 text-center max-w-sm px-6"
-      >
-        <div
-          className="w-16 h-16 mx-auto mb-6 flex items-center justify-center"
-          style={{
-            background: "oklch(0.78 0.165 85 / 0.1)",
-            border: "1px solid oklch(0.78 0.165 85 / 0.3)",
-          }}
-        >
-          <Loader2
-            size={28}
-            className="animate-spin"
-            style={{ color: "oklch(0.78 0.165 85)" }}
-          />
-        </div>
-        <h2
-          className="font-broadcast text-xl tracking-wider mb-2"
-          style={{ color: "oklch(0.78 0.165 85)" }}
-        >
-          CONNECTING…
-        </h2>
-        <p className="text-sm mb-6" style={{ color: "oklch(0.42 0.02 90)" }}>
-          Establishing connection to the auction network.
-        </p>
-        <button
-          type="button"
-          onClick={onRetry}
-          className="flex items-center gap-2 mx-auto px-5 py-2.5 font-broadcast text-sm tracking-wider transition-opacity hover:opacity-80"
-          style={{
-            background: "oklch(0.16 0.03 255)",
-            border: "1px solid oklch(0.25 0.03 255)",
-            color: "oklch(0.62 0.02 90)",
-          }}
-        >
-          <RotateCcw size={14} />
-          RETRY NOW
-        </button>
-      </motion.div>
-    </div>
-  );
-}
-
 // ─── Admin Panel ───────────────────────────────────────────────────────────────
 function AdminPanel() {
   const navigate = useNavigate();
-  const { actor, isFetching: actorFetching } = useActor();
-  const {
-    auctionState,
-    teams,
-    players,
-    dashboard,
-    isLoading,
-    error,
-    refetch,
-    pausePolling,
-  } = useAuctionData(3000);
+  const { auctionState, teams, players, dashboard, refetch, pausePolling } =
+    useOfflineAuctionData();
 
-  const [editPurseTeam, setEditPurseTeam] = useState<Team | null>(null);
+  const [editPurseTeam, setEditPurseTeam] = useState<OfflineTeam | null>(null);
   const [showUnsellModal, setShowUnsellModal] = useState(false);
-  const [isSelling, setIsSelling] = useState(false);
-  const [isResetting, setIsResetting] = useState(false);
-  const [isMarkingUnsold, setIsMarkingUnsold] = useState(false);
 
   // ── Optimistic bid state ─────────────────────────────────────────────────────
   const [localBid, setLocalBid] = useState<number | null>(null);
-  const [localLeadingTeamId, setLocalLeadingTeamId] = useState<bigint | null>(
+  const [localLeadingTeamId, setLocalLeadingTeamId] = useState<number | null>(
     null,
   );
   const [localAuctionActive, setLocalAuctionActive] = useState<boolean | null>(
     null,
   );
   const [localCurrentPlayerId, setLocalCurrentPlayerId] = useState<
-    bigint | null
+    number | null
   >(null);
   const [undoStack, setUndoStack] = useState<
-    Array<{ bid: number; teamId: bigint | null }>
+    Array<{ bid: number; teamId: number | null }>
   >([]);
   const isBiddingRef = useRef(false);
   const isUndoModeRef = useRef(false);
@@ -1102,7 +1015,7 @@ function AdminPanel() {
   const [bidBumping, setBidBumping] = useState(false);
 
   // Effective values
-  const serverBid = Number(auctionState?.currentBid ?? 0);
+  const serverBid = auctionState?.currentBid ?? 0;
   const currentBid = localBid !== null ? localBid : serverBid;
   const effectiveLeadingTeamId =
     localLeadingTeamId !== null
@@ -1119,26 +1032,21 @@ function AdminPanel() {
 
   const currentPlayer =
     effectiveCurrentPlayerId != null
-      ? (players.find(
-          (p) => String(p.id) === String(effectiveCurrentPlayerId),
-        ) ?? null)
+      ? (players.find((p) => p.id === effectiveCurrentPlayerId) ?? null)
       : null;
 
   const leadingTeam =
     effectiveLeadingTeamId != null
-      ? (teams.find((t) => String(t.id) === String(effectiveLeadingTeamId)) ??
-        null)
+      ? (teams.find((t) => t.id === effectiveLeadingTeamId) ?? null)
       : null;
 
-  // Last sold player (for UNSELL)
   const lastSoldPlayer =
     [...players]
       .filter((p) => p.status === "sold")
-      .sort((a, b) => Number(b.id) - Number(a.id))[0] ?? null;
+      .sort((a, b) => b.id - a.id)[0] ?? null;
   const lastSoldTeam =
     lastSoldPlayer?.soldTo != null
-      ? (teams.find((t) => String(t.id) === String(lastSoldPlayer.soldTo)) ??
-        null)
+      ? (teams.find((t) => t.id === lastSoldPlayer.soldTo) ?? null)
       : null;
 
   // Bid bump animation
@@ -1151,7 +1059,7 @@ function AdminPanel() {
     }
   }, [currentBid]);
 
-  // Sync optimistic bid when server confirms
+  // Sync optimistic bid when store confirms
   useEffect(() => {
     if (isUndoModeRef.current) return;
     if (localBid !== null && serverBid >= localBid) {
@@ -1173,11 +1081,7 @@ function AdminPanel() {
 
   // ── Actions ──────────────────────────────────────────────────────────────────
 
-  const handleSelectPlayer = async (playerId: bigint) => {
-    if (!actor) {
-      toast.error("Not connected yet — please wait a moment and try again");
-      return;
-    }
+  const handleSelectPlayer = (playerId: number) => {
     if (effectiveIsActive) {
       toast.warning("An auction is already active. Sell or reset first.");
       return;
@@ -1187,35 +1091,22 @@ function AdminPanel() {
     setLocalBid(null);
     setLocalLeadingTeamId(null);
     setUndoStack([]);
-    try {
-      const result = await actor.selectPlayer(playerId);
-      if (result.__kind__ === "err") {
-        setLocalCurrentPlayerId(null);
-        setLocalAuctionActive(null);
-        toast.error(result.err);
-      } else {
-        toast.success("Player selected");
-        refetch().finally(() => {
-          setLocalCurrentPlayerId(null);
-          setLocalAuctionActive(null);
-        });
-      }
-    } catch {
-      setTimeout(() => {
-        refetch().finally(() => {
-          setLocalCurrentPlayerId(null);
-          setLocalAuctionActive(null);
-        });
-      }, 2000);
+
+    const result = offlineStore.selectPlayer(playerId);
+    if (!result.ok) {
+      setLocalCurrentPlayerId(null);
+      setLocalAuctionActive(null);
+      toast.error(result.err);
+    } else {
+      toast.success("Player selected");
+      refetch();
+      setLocalCurrentPlayerId(null);
+      setLocalAuctionActive(null);
     }
   };
 
   const handlePlaceBid = useCallback(
-    (teamId: bigint) => {
-      if (!actor) {
-        toast.error("Not connected yet — please wait a moment and try again");
-        return;
-      }
+    (teamId: number) => {
       if (isBiddingRef.current) return;
 
       const prevBid = currentBid;
@@ -1227,28 +1118,20 @@ function AdminPanel() {
       setLocalLeadingTeamId(teamId);
       setUndoStack((prev) => [...prev, { bid: prevBid, teamId: prevTeamId }]);
 
-      actor
-        .placeBid(teamId)
-        .then((result) => {
-          if (result.__kind__ === "err") {
-            setLocalBid(null);
-            setLocalLeadingTeamId(null);
-            setUndoStack((prev) => prev.slice(0, -1));
-            toast.error(result.err, {
-              description: "Insufficient purse or slot rule violated",
-            });
-          } else {
-            refetch();
-          }
-        })
-        .catch(() => {
-          setTimeout(() => refetch(), 2000);
-        })
-        .finally(() => {
-          isBiddingRef.current = false;
+      const result = offlineStore.placeBid(teamId);
+      if (!result.ok) {
+        setLocalBid(null);
+        setLocalLeadingTeamId(null);
+        setUndoStack((prev) => prev.slice(0, -1));
+        toast.error(result.err, {
+          description: "Insufficient purse or slot rule violated",
         });
+      } else {
+        refetch();
+      }
+      isBiddingRef.current = false;
     },
-    [actor, currentBid, effectiveLeadingTeamId, refetch],
+    [currentBid, effectiveLeadingTeamId, refetch],
   );
 
   const handleUndoBid = () => {
@@ -1264,184 +1147,111 @@ function AdminPanel() {
       setLocalBid(null);
       setLocalLeadingTeamId(null);
     }, 5000);
-    toast.info("Bid reversed (local). Server will resync in 5 seconds.", {
-      duration: 5000,
-    });
+    toast.info("Bid reversed. Will resync in 5 seconds.", { duration: 5000 });
   };
 
-  const handleSell = async () => {
-    if (!actor) {
-      toast.error("Not connected yet — please wait a moment and try again");
-      return;
-    }
-    setIsSelling(true);
+  const handleSell = () => {
     setLocalAuctionActive(false);
     setLocalBid(null);
     setLocalLeadingTeamId(null);
     setUndoStack([]);
-    try {
-      const result = await actor.sellPlayer();
-      if (result.__kind__ === "err") {
-        setLocalAuctionActive(null);
-        toast.error(result.err);
-      } else {
-        toast.success("Player SOLD! 🎉");
-        refetch().finally(() => {
-          setLocalAuctionActive(null);
-          setLocalCurrentPlayerId(null);
-        });
-      }
-    } catch {
-      toast.success("Player SOLD! Syncing…");
-      setTimeout(() => {
-        refetch().finally(() => {
-          setLocalAuctionActive(null);
-          setLocalCurrentPlayerId(null);
-        });
-      }, 2000);
-    } finally {
-      setIsSelling(false);
+
+    const result = offlineStore.sellPlayer();
+    if (!result.ok) {
+      setLocalAuctionActive(null);
+      toast.error(result.err);
+    } else {
+      toast.success("Player SOLD! 🎉");
+      refetch();
+      setLocalAuctionActive(null);
+      setLocalCurrentPlayerId(null);
     }
   };
 
-  const handleReset = async () => {
-    if (!actor) {
-      toast.error("Not connected yet — please wait a moment and try again");
-      return;
-    }
+  const handleReset = () => {
     if (!confirm("Reset entire auction? This cannot be undone.")) return;
-    setIsResetting(true);
-    await actor.resetAuction();
+    offlineStore.resetAuction();
     setLocalBid(null);
     setLocalLeadingTeamId(null);
     setLocalAuctionActive(null);
     setLocalCurrentPlayerId(null);
     setUndoStack([]);
     toast.success("Auction reset");
-    await refetch();
-    setIsResetting(false);
+    refetch();
   };
 
-  const handleEditPurse = async (teamId: bigint, newPurse: bigint) => {
-    if (!actor) {
-      toast.error("Not connected yet — please wait a moment and try again");
-      return;
-    }
-    const result = await actor.editTeamPurse(teamId, newPurse);
-    if (result.__kind__ === "err") {
+  const handleEditPurse = (teamId: number, newPurse: number) => {
+    const result = offlineStore.editTeamPurse(teamId, newPurse);
+    if (!result.ok) {
       toast.error(result.err);
     } else {
       toast.success("Purse updated");
-      await refetch();
+      refetch();
     }
   };
 
-  const handleUnsellConfirm = async () => {
-    if (!actor) {
-      toast.error("Not connected yet — please wait a moment and try again");
-      return;
-    }
+  const handleUnsellConfirm = () => {
     if (!lastSoldPlayer) return;
-    try {
-      // Use the atomic unsellPlayer backend call
-      const result = await actor.unsellPlayer(lastSoldPlayer.id);
-      if (result.__kind__ === "err") {
-        toast.error(`Unsell failed: ${result.err}`);
-        return;
-      }
+    const result = offlineStore.unsellPlayer(lastSoldPlayer.id);
+    if (!result.ok) {
+      toast.error(`Unsell failed: ${result.err}`);
+    } else {
       toast.success(`${lastSoldPlayer.name} returned to auction pool.`, {
         duration: 5000,
       });
-      await refetch();
-    } catch {
-      toast.error("Unsell failed — check connection and try again");
+      refetch();
     }
   };
 
-  const handleMarkUnsold = async () => {
-    if (!actor) {
-      toast.error("Not connected yet — please wait a moment and try again");
-      return;
-    }
-    setIsMarkingUnsold(true);
+  const handleMarkUnsold = () => {
     setLocalAuctionActive(false);
     setLocalBid(null);
     setLocalLeadingTeamId(null);
     setUndoStack([]);
-    try {
-      const result = await actor.markPlayerUnsold();
-      if (result.__kind__ === "err") {
-        setLocalAuctionActive(null);
-        toast.error(result.err);
-      } else {
-        toast.info("Player marked as UNSOLD");
-        refetch().finally(() => {
-          setLocalAuctionActive(null);
-          setLocalCurrentPlayerId(null);
-        });
-      }
-    } catch {
-      toast.info("Player marked as UNSOLD. Syncing…");
-      setTimeout(() => {
-        refetch().finally(() => {
-          setLocalAuctionActive(null);
-          setLocalCurrentPlayerId(null);
-        });
-      }, 2000);
-    } finally {
-      setIsMarkingUnsold(false);
+
+    const result = offlineStore.markPlayerUnsold();
+    if (!result.ok) {
+      setLocalAuctionActive(null);
+      toast.error(result.err);
+    } else {
+      toast.info("Player marked as UNSOLD");
+      refetch();
+      setLocalAuctionActive(null);
+      setLocalCurrentPlayerId(null);
     }
   };
 
-  const handlePutBack = async (playerId: bigint) => {
-    if (!actor) {
-      toast.error("Not connected yet — please wait a moment and try again");
-      return;
-    }
-    try {
-      const result = await actor.putPlayerBackToAuction(playerId);
-      if (result.__kind__ === "err") {
-        toast.error(result.err);
-      } else {
-        toast.success("Player returned to auction pool");
-        refetch();
-      }
-    } catch {
-      toast.error("Failed to put player back — check connection");
+  const handlePutBack = (playerId: number) => {
+    const result = offlineStore.putPlayerBackToAuction(playerId);
+    if (!result.ok) {
+      toast.error(result.err);
+    } else {
+      toast.success("Player returned to auction pool");
+      refetch();
     }
   };
 
-  const handleExportCSV = async () => {
-    if (!actor) {
-      toast.error("Not connected yet — please wait a moment and try again");
-      return;
-    }
-    try {
-      const results = await actor.getResults();
-      const rows = [
-        ["Player Name", "Category", "Base Price", "Sold Price", "Sold To"],
-        ...results.map((pwt) => [
-          pwt.player.name,
-          pwt.player.category,
-          String(Number(pwt.player.basePrice)),
-          pwt.player.soldPrice !== undefined
-            ? String(Number(pwt.player.soldPrice))
-            : "-",
-          pwt.team ? pwt.team.name : "Unsold",
-        ]),
-      ];
-      const csv = rows.map((r) => r.map((v) => `"${v}"`).join(",")).join("\n");
-      const blob = new Blob([csv], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "spl-auction-results.csv";
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success("Results exported");
-    } catch {
-      toast.error("Export failed");
-    }
+  const handleExportCSV = () => {
+    const results = offlineStore.getResults();
+    const rows = [
+      ["Player Name", "Category", "Base Price", "Sold Price", "Sold To"],
+      ...results.map((pwt) => [
+        pwt.player.name,
+        pwt.player.category,
+        String(pwt.player.basePrice),
+        pwt.player.soldPrice !== undefined ? String(pwt.player.soldPrice) : "-",
+        pwt.team ? pwt.team.name : "Unsold",
+      ]),
+    ];
+    const csv = rows.map((r) => r.map((v) => `"${v}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "spl-offline-auction-results.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success("Results exported");
   };
 
   const handleLogout = () => {
@@ -1449,19 +1259,15 @@ function AdminPanel() {
     window.location.reload();
   };
 
-  // Filter out the hidden settings player before any display logic
-  const visiblePlayers = players.filter((p) => !isSettingsPlayer(p));
-  const upcomingPlayers = visiblePlayers.filter((p) => p.status === "upcoming");
-  const soldPlayers = visiblePlayers.filter((p) => p.status === "sold");
-  // Build a sequential number map for all players (upcoming first, then sold)
-  // so each player has a persistent display number
-  const playerNumberMap = new Map<string, number>();
+  const upcomingPlayers = players.filter((p) => p.status === "upcoming");
+  const soldPlayers = players.filter((p) => p.status === "sold");
+  const playerNumberMap = new Map<number, number>();
   let playerCounter = 1;
   for (const p of upcomingPlayers) {
-    playerNumberMap.set(String(p.id), playerCounter++);
+    playerNumberMap.set(p.id, playerCounter++);
   }
   for (const p of soldPlayers) {
-    playerNumberMap.set(String(p.id), playerCounter++);
+    playerNumberMap.set(p.id, playerCounter++);
   }
 
   const [teamLogos, setTeamLogos] = useState(() => getTeamLogos());
@@ -1488,73 +1294,6 @@ function AdminPanel() {
   const showUnsoldButton =
     effectiveIsActive && effectiveCurrentPlayerId !== null;
 
-  // Show connecting screen while actor is initializing
-  if ((actorFetching || !actor) && teams.length === 0) {
-    return <ConnectingScreen onRetry={() => window.location.reload()} />;
-  }
-
-  // Full-page error state
-  if (error && !isLoading && teams.length === 0) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center broadcast-overlay">
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="relative z-10 text-center max-w-md px-6"
-        >
-          <div
-            className="w-16 h-16 mx-auto mb-6 flex items-center justify-center"
-            style={{
-              background: "oklch(0.62 0.22 25 / 0.1)",
-              border: "1px solid oklch(0.62 0.22 25 / 0.3)",
-            }}
-          >
-            <AlertCircle size={28} style={{ color: "oklch(0.72 0.18 25)" }} />
-          </div>
-          <h2
-            className="font-broadcast text-xl tracking-wider mb-3"
-            style={{ color: "oklch(0.72 0.18 25)" }}
-          >
-            CONNECTION ERROR
-          </h2>
-          <p className="text-sm mb-2" style={{ color: "oklch(0.52 0.02 90)" }}>
-            {error}
-          </p>
-          <p className="text-xs mb-6" style={{ color: "oklch(0.38 0.02 90)" }}>
-            The canister may be initialising or unreachable. Check your network.
-          </p>
-          <div className="flex gap-3 justify-center">
-            <button
-              type="button"
-              onClick={() => refetch()}
-              className="flex items-center gap-2 px-5 py-2.5 font-broadcast text-sm tracking-wider hover:opacity-80"
-              style={{
-                background:
-                  "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))",
-                color: "oklch(0.08 0.025 265)",
-              }}
-            >
-              <RotateCcw size={14} />
-              RETRY
-            </button>
-            <button
-              type="button"
-              onClick={() => window.location.reload()}
-              className="flex items-center gap-2 px-5 py-2.5 font-broadcast text-sm tracking-wider hover:opacity-80"
-              style={{
-                background: "oklch(0.16 0.03 255)",
-                border: "1px solid oklch(0.25 0.03 255)",
-                color: "oklch(0.62 0.02 90)",
-              }}
-            >
-              RELOAD PAGE
-            </button>
-          </div>
-        </motion.div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -1562,14 +1301,14 @@ function AdminPanel() {
         className="sticky top-0 z-40 flex items-center justify-between px-4 py-2.5"
         style={{
           background: "oklch(0.1 0.025 255 / 0.97)",
-          borderBottom: "1px solid oklch(0.78 0.165 85 / 0.2)",
+          borderBottom: "1px solid oklch(0.82 0.18 65 / 0.3)",
           backdropFilter: "blur(12px)",
         }}
       >
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => navigate({ to: "/" })}
+            onClick={() => navigate({ to: "/offline" })}
             className="flex items-center gap-1 text-sm transition-opacity hover:opacity-70"
             style={{ color: "oklch(0.52 0.02 90)" }}
           >
@@ -1581,8 +1320,16 @@ function AdminPanel() {
           >
             SPL 2026
           </span>
-          <span className="text-xs" style={{ color: "oklch(0.42 0.02 90)" }}>
-            Admin
+          <span
+            className="inline-flex items-center gap-1 px-2 py-0.5 text-xs font-broadcast tracking-widest"
+            style={{
+              background: "oklch(0.82 0.18 65 / 0.12)",
+              border: "1px solid oklch(0.82 0.18 65 / 0.35)",
+              color: "oklch(0.88 0.18 68)",
+            }}
+          >
+            <WifiOff size={9} />
+            OFFLINE
           </span>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -1601,7 +1348,7 @@ function AdminPanel() {
           </button>
           <button
             type="button"
-            onClick={() => navigate({ to: "/settings" })}
+            onClick={() => navigate({ to: "/offline/settings" })}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-broadcast tracking-wider hover:opacity-80"
             style={{
               background: "oklch(0.16 0.03 255)",
@@ -1614,7 +1361,7 @@ function AdminPanel() {
           </button>
           <button
             type="button"
-            onClick={() => navigate({ to: "/squads" })}
+            onClick={() => navigate({ to: "/offline/squads" })}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-broadcast tracking-wider hover:opacity-80"
             style={{
               background: "oklch(0.78 0.165 85 / 0.12)",
@@ -1627,7 +1374,7 @@ function AdminPanel() {
           </button>
           <button
             type="button"
-            onClick={() => navigate({ to: "/live" })}
+            onClick={() => navigate({ to: "/offline/live" })}
             className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-broadcast tracking-wider hover:opacity-80"
             style={{
               background: "oklch(0.78 0.165 85 / 0.12)",
@@ -1653,39 +1400,6 @@ function AdminPanel() {
         </div>
       </header>
 
-      {/* Error banner */}
-      <AnimatePresence>
-        {error && teams.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: "auto" }}
-            exit={{ opacity: 0, height: 0 }}
-            className="flex items-center justify-between gap-3 px-4 py-2 text-xs"
-            style={{
-              background: "oklch(0.62 0.22 25 / 0.1)",
-              borderBottom: "1px solid oklch(0.62 0.22 25 / 0.3)",
-              color: "oklch(0.75 0.15 25)",
-            }}
-          >
-            <div className="flex items-center gap-2">
-              <AlertCircle size={12} />
-              <span>Network hiccup — showing last known data.</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => refetch()}
-              className="text-xs font-broadcast tracking-wider px-2 py-0.5 hover:opacity-70"
-              style={{
-                background: "oklch(0.62 0.22 25 / 0.15)",
-                border: "1px solid oklch(0.62 0.22 25 / 0.4)",
-              }}
-            >
-              RETRY
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       <div className="p-3 grid grid-cols-1 lg:grid-cols-3 gap-3">
         {/* ─── LEFT COLUMN ──────────────────────────────────────────────── */}
         <div className="space-y-3">
@@ -1707,7 +1421,7 @@ function AdminPanel() {
                 className="font-digital text-lg font-bold"
                 style={{ color: "oklch(0.78 0.165 85)" }}
               >
-                {Number(dashboard?.totalSpent ?? 0).toLocaleString()}
+                {(dashboard?.totalSpent ?? 0).toLocaleString()}
               </div>
               <div className="text-xs" style={{ color: "oklch(0.42 0.02 90)" }}>
                 Total Spent
@@ -1729,7 +1443,7 @@ function AdminPanel() {
                 className="font-digital text-lg font-bold"
                 style={{ color: "oklch(0.7 0.15 140)" }}
               >
-                {Number(dashboard?.remainingPlayers ?? 0)}
+                {dashboard?.remainingPlayers ?? 0}
               </div>
               <div className="text-xs" style={{ color: "oklch(0.42 0.02 90)" }}>
                 Remaining
@@ -1759,9 +1473,9 @@ function AdminPanel() {
                     className="font-digital text-base font-bold"
                     style={{ color: "oklch(0.78 0.165 85)" }}
                   >
-                    {Number(
+                    {(
                       dashboard.mostExpensivePlayer.soldPrice ??
-                        dashboard.mostExpensivePlayer.basePrice,
+                      dashboard.mostExpensivePlayer.basePrice
                     ).toLocaleString()}{" "}
                     pts
                   </div>
@@ -1806,14 +1520,13 @@ function AdminPanel() {
             </div>
             <div className="overflow-y-auto max-h-64 sm:max-h-80">
               {upcomingPlayers.map((player) => {
-                const num = playerNumberMap.get(String(player.id));
+                const num = playerNumberMap.get(player.id);
                 return (
                   <div
-                    key={String(player.id)}
+                    key={player.id}
                     className="px-3 py-2.5 flex items-center justify-between gap-2"
                     style={{ borderBottom: "1px solid oklch(0.18 0.025 255)" }}
                   >
-                    {/* Player number badge */}
                     <span
                       className="font-digital font-bold flex-shrink-0"
                       style={{
@@ -1837,7 +1550,7 @@ function AdminPanel() {
                           className="text-xs font-digital"
                           style={{ color: "oklch(0.52 0.02 90)" }}
                         >
-                          {Number(player.basePrice)} pts
+                          {player.basePrice} pts
                         </span>
                       </div>
                     </div>
@@ -1858,14 +1571,13 @@ function AdminPanel() {
                 );
               })}
               {soldPlayers.map((player) => {
-                const num = playerNumberMap.get(String(player.id));
+                const num = playerNumberMap.get(player.id);
                 return (
                   <div
-                    key={String(player.id)}
+                    key={player.id}
                     className="px-3 py-2 flex items-center gap-2 opacity-40"
                     style={{ borderBottom: "1px solid oklch(0.18 0.025 255)" }}
                   >
-                    {/* Player number badge */}
                     <span
                       className="font-digital font-bold flex-shrink-0"
                       style={{
@@ -1897,29 +1609,6 @@ function AdminPanel() {
                   </div>
                 );
               })}
-              {players.length === 0 && isLoading && (
-                <div className="px-3 py-6 flex items-center justify-center gap-2">
-                  <Loader2
-                    size={14}
-                    className="animate-spin"
-                    style={{ color: "oklch(0.78 0.165 85 / 0.5)" }}
-                  />
-                  <span
-                    className="text-xs"
-                    style={{ color: "oklch(0.38 0.02 90)" }}
-                  >
-                    Loading players…
-                  </span>
-                </div>
-              )}
-              {players.length === 0 && !isLoading && (
-                <div
-                  className="px-3 py-8 text-center text-sm"
-                  style={{ color: "oklch(0.42 0.02 90)" }}
-                >
-                  No players loaded
-                </div>
-              )}
             </div>
           </div>
 
@@ -1967,9 +1656,6 @@ function AdminPanel() {
                         src={currentPlayer.imageUrl}
                         alt={currentPlayer.name}
                         className="w-full h-full object-cover"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = "none";
-                        }}
                       />
                     ) : (
                       <div
@@ -2001,7 +1687,7 @@ function AdminPanel() {
                           className="font-digital"
                           style={{ color: "oklch(0.62 0.12 82)" }}
                         >
-                          {Number(currentPlayer.basePrice).toLocaleString()}
+                          {currentPlayer.basePrice.toLocaleString()}
                         </span>
                       </span>
                     </div>
@@ -2012,7 +1698,7 @@ function AdminPanel() {
                       className="font-digital text-sm"
                       style={{ color: "oklch(0.62 0.12 82)" }}
                     >
-                      {Number(currentPlayer.rating)}
+                      {currentPlayer.rating}
                     </span>
                   </div>
                 </>
@@ -2081,7 +1767,7 @@ function AdminPanel() {
                   <AnimatePresence mode="wait">
                     {leadingTeam ? (
                       <motion.div
-                        key={String(leadingTeam.id)}
+                        key={leadingTeam.id}
                         initial={{ opacity: 0, x: -6 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: 6 }}
@@ -2114,7 +1800,7 @@ function AdminPanel() {
                 <AnimatePresence mode="wait">
                   {leadingTeam ? (
                     <motion.div
-                      key={`logo-${String(leadingTeam.id)}`}
+                      key={`logo-${leadingTeam.id}`}
                       initial={{ opacity: 0, scale: 0.8 }}
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.8 }}
@@ -2132,10 +1818,6 @@ function AdminPanel() {
                             borderRadius: "50%",
                             border: "2px solid oklch(0.78 0.165 85 / 0.6)",
                             boxShadow: "0 0 20px oklch(0.78 0.165 85 / 0.3)",
-                          }}
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).style.display =
-                              "none";
                           }}
                         />
                       ) : (
@@ -2188,19 +1870,14 @@ function AdminPanel() {
               <button
                 type="button"
                 onClick={handleReset}
-                disabled={isResetting}
-                className="flex items-center gap-1.5 px-3 py-2 text-xs font-broadcast tracking-wider hover:opacity-80 disabled:opacity-40"
+                className="flex items-center gap-1.5 px-3 py-2 text-xs font-broadcast tracking-wider hover:opacity-80"
                 style={{
                   background: "oklch(0.13 0.03 255)",
                   border: "1px solid oklch(0.62 0.22 25 / 0.35)",
                   color: "oklch(0.62 0.22 25)",
                 }}
               >
-                {isResetting ? (
-                  <Loader2 size={12} className="animate-spin" />
-                ) : (
-                  <RotateCcw size={12} />
-                )}
+                <RotateCcw size={12} />
                 RESET
               </button>
 
@@ -2235,19 +1912,14 @@ function AdminPanel() {
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.9 }}
                     onClick={handleMarkUnsold}
-                    disabled={isMarkingUnsold}
-                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-broadcast tracking-wider hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex items-center gap-1.5 px-3 py-2 text-xs font-broadcast tracking-wider hover:opacity-80"
                     style={{
                       background: "oklch(0.13 0.03 255)",
                       border: "1px solid oklch(0.82 0.18 65 / 0.55)",
                       color: "oklch(0.82 0.18 65)",
                     }}
                   >
-                    {isMarkingUnsold ? (
-                      <Loader2 size={12} className="animate-spin" />
-                    ) : (
-                      <Ban size={12} />
-                    )}
+                    <Ban size={12} />
                     UNSOLD
                   </motion.button>
                 )}
@@ -2279,9 +1951,7 @@ function AdminPanel() {
               <button
                 type="button"
                 onClick={handleSell}
-                disabled={
-                  isSelling || !effectiveIsActive || !effectiveLeadingTeamId
-                }
+                disabled={!effectiveIsActive || !effectiveLeadingTeamId}
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 font-broadcast tracking-widest hover:opacity-90 active:scale-[0.98] disabled:opacity-30 disabled:cursor-not-allowed"
                 style={{
                   fontSize: "15px",
@@ -2303,12 +1973,8 @@ function AdminPanel() {
                       : "none",
                 }}
               >
-                {isSelling ? (
-                  <Loader2 size={15} className="animate-spin" />
-                ) : (
-                  <CheckCircle size={15} />
-                )}
-                {isSelling ? "SELLING…" : "SOLD!"}
+                <CheckCircle size={15} />
+                SOLD!
               </button>
             </div>
           </div>
@@ -2342,11 +2008,11 @@ function AdminPanel() {
             <div className="p-2.5 grid grid-cols-2 gap-2">
               {teams.map((team) => (
                 <TeamCard
-                  key={String(team.id)}
+                  key={team.id}
                   team={team}
                   isLeading={
-                    effectiveLeadingTeamId != null &&
-                    String(team.id) === String(effectiveLeadingTeamId)
+                    effectiveLeadingTeamId !== null &&
+                    team.id === effectiveLeadingTeamId
                   }
                   currentBid={currentBid}
                   auctionActive={effectiveIsActive}
@@ -2354,29 +2020,6 @@ function AdminPanel() {
                   onEditPurse={setEditPurseTeam}
                 />
               ))}
-              {teams.length === 0 && isLoading && (
-                <div className="col-span-full py-8 flex items-center justify-center gap-2">
-                  <Loader2
-                    size={16}
-                    className="animate-spin"
-                    style={{ color: "oklch(0.78 0.165 85 / 0.5)" }}
-                  />
-                  <span
-                    className="text-sm font-broadcast tracking-wider"
-                    style={{ color: "oklch(0.35 0.02 90)" }}
-                  >
-                    LOADING…
-                  </span>
-                </div>
-              )}
-              {teams.length === 0 && !isLoading && (
-                <div
-                  className="col-span-full py-8 text-center text-sm"
-                  style={{ color: "oklch(0.42 0.02 90)" }}
-                >
-                  No teams found
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -2408,7 +2051,7 @@ function AdminPanel() {
 }
 
 // ─── Main Export ───────────────────────────────────────────────────────────────
-export default function AdminPage() {
+export default function OfflineAdminPage() {
   const [isAuthed, setIsAuthed] = useState(
     () => localStorage.getItem(AUTH_KEY) === "1",
   );
