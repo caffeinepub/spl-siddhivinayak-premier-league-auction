@@ -1,8 +1,13 @@
 import { Crown, Star, Users, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Player, Team } from "../backend.d";
+import { useActor } from "../hooks/useActor";
 import { useAuctionData } from "../hooks/useAuctionData";
+import {
+  applySettingsToLocalStorage,
+  loadSettingsFromBackend,
+} from "../utils/settingsStore";
 import {
   DEFAULT_LIVE_COLORS,
   DEFAULT_LIVE_LAYOUT,
@@ -554,7 +559,11 @@ function SquadTeamRow({
 
 // ─── Main LivePage ────────────────────────────────────────────────────────────
 export default function LivePage() {
-  const { auctionState, teams, players, isLoading } = useAuctionData(3000);
+  // Use 1500ms polling on the live screen so bid updates appear within ~1.5s
+  const { auctionState, teams, players, isLoading } = useAuctionData(1500);
+  // useActor for cross-device settings sync (projector device has empty localStorage)
+  const { actor } = useActor();
+
   const [layout, setLayout] = useState<LiveLayoutConfig>(() => getLiveLayout());
   const [colors, setColors] = useState<LiveColorTheme>(() => getLiveColors());
   const [showSquads, setShowSquads] = useState(false);
@@ -573,7 +582,9 @@ export default function LivePage() {
   );
 
   // Track sold overlay state — triggered by auction active→inactive transition
-  const prevAuctionActiveRef = useRef<boolean | null>(null);
+  // Initialize to false (not null) so the first render doesn't miss transitions
+  const prevAuctionActiveRef = useRef<boolean>(false);
+  const isFirstRenderRef = useRef<boolean>(true);
   const prevLeadingTeamIdRef = useRef<string | null>(null);
   const prevCurrentPlayerIdRef = useRef<string | null>(null);
   const prevCurrentBidRef = useRef<bigint>(0n);
@@ -582,7 +593,78 @@ export default function LivePage() {
   const [lastSoldTeam, setLastSoldTeam] = useState<Team | null>(null);
   const soldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Apply settings from all sources into state — memoized so it can be
+  // safely included in useEffect dependency arrays without causing re-renders.
+  const applySettingsToState = useCallback(
+    (settings: {
+      liveLayout: LiveLayoutConfig;
+      liveColors: LiveColorTheme;
+      league: ReturnType<typeof getLeagueSettings>;
+      teamLogos: Record<string, string>;
+      ownerPhotos: Record<string, string>;
+      iconPhotos: Record<string, string>;
+    }) => {
+      setLayout(settings.liveLayout);
+      setColors(settings.liveColors);
+      setLeague(settings.league);
+      setTeamLogos(settings.teamLogos);
+      setOwnerPhotos(settings.ownerPhotos);
+      setIconPhotos(settings.iconPhotos);
+    },
+    [],
+  );
+
+  // Load settings from backend on mount (and when actor becomes available).
+  // This is the key fix for the projector device: its localStorage is empty,
+  // so we pull the canonical settings from ICP and populate both state and
+  // localStorage so all subsequent localStorage reads are warm.
+  const settingsLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!actor || settingsLoadedRef.current) return;
+    settingsLoadedRef.current = true;
+
+    loadSettingsFromBackend(actor).then((settings) => {
+      if (!settings) return;
+      // Warm up localStorage on the projector device
+      applySettingsToLocalStorage(settings);
+      // Apply directly to React state — no round-trip through localStorage reads
+      applySettingsToState({
+        liveLayout: settings.liveLayout,
+        liveColors: settings.liveColors,
+        league: settings.league,
+        teamLogos: settings.teamLogos,
+        ownerPhotos: settings.ownerPhotos,
+        iconPhotos: settings.iconPhotos,
+      });
+    });
+  }, [actor, applySettingsToState]);
+
+  // Re-sync settings from backend every 10 seconds — settings change infrequently
+  // so we don't need to hammer the backend every 1.5s. This ensures logo/colour
+  // changes made in Settings mid-event eventually appear on the projector.
+  useEffect(() => {
+    if (!actor) return;
+
+    const interval = setInterval(() => {
+      loadSettingsFromBackend(actor).then((settings) => {
+        if (!settings) return;
+        applySettingsToLocalStorage(settings);
+        applySettingsToState({
+          liveLayout: settings.liveLayout,
+          liveColors: settings.liveColors,
+          league: settings.league,
+          teamLogos: settings.teamLogos,
+          ownerPhotos: settings.ownerPhotos,
+          iconPhotos: settings.iconPhotos,
+        });
+      });
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [actor, applySettingsToState]);
+
   // Refresh layout + colors + league + logos from localStorage periodically
+  // (same-device tab sync and manual setting changes still use this path)
   useEffect(() => {
     const refresh = () => {
       setLayout(getLiveLayout());
@@ -593,7 +675,7 @@ export default function LivePage() {
       setIconPhotos(getIconPhotos());
     };
     const interval = setInterval(refresh, 3000);
-    // Also refresh instantly when Settings saves in another tab
+    // Also refresh instantly when Settings saves in another tab on the same device
     window.addEventListener("storage", refresh);
     return () => {
       clearInterval(interval);
@@ -612,21 +694,29 @@ export default function LivePage() {
       null)
     : null;
 
-  // Detect sold: auction goes from active → inactive with a non-zero bid
+  // Detect sold: auction goes from active → inactive with a non-zero bid.
+  // Skip the very first render to avoid false positives on page load.
   useEffect(() => {
     if (!auctionState) return;
 
     const wasActive = prevAuctionActiveRef.current;
     const isNowActive = auctionState.isActive;
 
-    if (wasActive === true && isNowActive === false) {
+    // Only fire the sold overlay after the first render has set the initial
+    // previous state — prevents a spurious trigger on initial mount when
+    // the auction happens to already be inactive.
+    if (
+      !isFirstRenderRef.current &&
+      wasActive === true &&
+      isNowActive === false
+    ) {
       // Auction just ended — find the sold player using previously tracked IDs
       const prevLeadingId = prevLeadingTeamIdRef.current;
       const prevPlayerId = prevCurrentPlayerIdRef.current;
       const prevBid = prevCurrentBidRef.current;
 
       if (prevLeadingId && prevPlayerId && prevBid > 0n) {
-        // Player was sold
+        // Player was sold — prefer the updated record with status="sold"
         const soldPlayer =
           players.find(
             (p) => String(p.id) === prevPlayerId && p.status === "sold",
@@ -647,11 +737,17 @@ export default function LivePage() {
       }
     }
 
+    // Mark that we have processed the first render — subsequent transitions
+    // will correctly detect active→inactive changes.
+    isFirstRenderRef.current = false;
+
     // Track current values for next comparison
     prevAuctionActiveRef.current = isNowActive;
-    prevLeadingTeamIdRef.current = auctionState.leadingTeamId
-      ? String(auctionState.leadingTeamId)
-      : prevLeadingTeamIdRef.current;
+    // Only update leading team ID when we have a value (preserve it for
+    // the sold detection even after the auction becomes inactive)
+    if (auctionState.leadingTeamId) {
+      prevLeadingTeamIdRef.current = String(auctionState.leadingTeamId);
+    }
     prevCurrentPlayerIdRef.current = auctionState.currentPlayerId
       ? String(auctionState.currentPlayerId)
       : null;
