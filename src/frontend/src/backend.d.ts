@@ -88,6 +88,7 @@ export interface backendInterface {
     getPlayersByCategory(category: Category): Promise<Array<Player>>;
     getRemainingPurse(teamId: TeamId): Promise<Amount | null>;
     getResults(): Promise<Array<PlayerWithTeam>>;
+    getSettings(): Promise<string>;
     getTeamById(teamId: TeamId): Promise<Team | null>;
     getTeams(): Promise<Array<Team>>;
     initialize(): Promise<boolean>;
@@ -95,6 +96,7 @@ export interface backendInterface {
     placeBid(teamId: TeamId): Promise<Result>;
     putPlayerBackToAuction(playerId: PlayerId): Promise<Result>;
     resetAuction(): Promise<void>;
+    saveSettings(json: string): Promise<void>;
     selectPlayer(playerId: PlayerId): Promise<Result>;
     sellPlayer(): Promise<Result>;
     unsellPlayer(playerId: PlayerId): Promise<Result>;

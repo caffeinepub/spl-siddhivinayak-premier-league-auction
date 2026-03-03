@@ -491,26 +491,6 @@ export default function LandingPage() {
         </motion.div>
       </motion.div>
 
-      {/* Offline Backup link */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 1.1 }}
-        className="absolute bottom-16 left-0 right-0 text-center z-10"
-      >
-        <a
-          href="/offline"
-          className="inline-flex items-center gap-1.5 px-4 py-1.5 font-broadcast tracking-widest text-xs transition-all hover:opacity-90"
-          style={{
-            background: "oklch(0.55 0.18 55 / 0.12)",
-            border: "1px solid oklch(0.55 0.18 55 / 0.4)",
-            color: "oklch(0.72 0.18 55)",
-          }}
-        >
-          ⚡ OFFLINE BACKUP →
-        </a>
-      </motion.div>
-
       {/* Footer */}
       <motion.footer
         initial={{ opacity: 0 }}

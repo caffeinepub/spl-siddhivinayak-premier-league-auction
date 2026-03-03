@@ -13,12 +13,6 @@ import LivePage from "./pages/LivePage";
 import SettingsPage from "./pages/SettingsPage";
 import SquadsPage from "./pages/SquadsPage";
 import TeamPage from "./pages/TeamPage";
-import OfflineAdminPage from "./pages/offline/OfflineAdminPage";
-import OfflineLandingPage from "./pages/offline/OfflineLandingPage";
-import OfflineLivePage from "./pages/offline/OfflineLivePage";
-import OfflineSettingsPage from "./pages/offline/OfflineSettingsPage";
-import OfflineSquadsPage from "./pages/offline/OfflineSquadsPage";
-import OfflineTeamPage from "./pages/offline/OfflineTeamPage";
 
 // Root route with Toaster
 const rootRoute = createRootRoute({
@@ -93,42 +87,6 @@ const teamRoute = createRoute({
   component: TeamPage,
 });
 
-const offlineIndexRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/offline",
-  component: OfflineLandingPage,
-});
-
-const offlineAdminRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/offline/admin",
-  component: OfflineAdminPage,
-});
-
-const offlineLiveRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/offline/live",
-  component: OfflineLivePage,
-});
-
-const offlineSettingsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/offline/settings",
-  component: OfflineSettingsPage,
-});
-
-const offlineSquadsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/offline/squads",
-  component: OfflineSquadsPage,
-});
-
-const offlineTeamRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/offline/team/$teamId",
-  component: OfflineTeamPage,
-});
-
 const routeTree = rootRoute.addChildren([
   indexRoute,
   adminRoute,
@@ -136,12 +94,6 @@ const routeTree = rootRoute.addChildren([
   settingsRoute,
   squadsRoute,
   teamRoute,
-  offlineIndexRoute,
-  offlineAdminRoute,
-  offlineLiveRoute,
-  offlineSettingsRoute,
-  offlineSquadsRoute,
-  offlineTeamRoute,
 ]);
 
 const router = createRouter({ routeTree });

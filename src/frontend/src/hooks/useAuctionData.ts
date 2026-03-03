@@ -106,7 +106,7 @@ export function useAuctionData(intervalMs = 3000): AuctionData {
 
       // Auto-sync latest online data to offline localStorage backup
       // Runs silently — never throws, never affects online functionality
-      syncToOffline(teamsData, visiblePlayers, state, dashData);
+      syncToOffline();
 
       // On first successful fetch, load settings from backend and mirror
       // them to localStorage so offline mode and other devices stay in sync.

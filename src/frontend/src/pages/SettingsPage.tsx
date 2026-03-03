@@ -5,7 +5,6 @@ import {
   Loader2,
   Minus,
   Plus,
-  RotateCcw,
   Save,
   Trash2,
   Upload,
@@ -13,12 +12,12 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Category, type Player, type Team } from "../backend.d";
 import { useActor } from "../hooks/useActor";
 import { useImageUpload } from "../hooks/useImageUpload";
+import type { IDBCategory, IDBPlayer, IDBTeam } from "../idbStore";
+import { IDB_CHANGE_EVENT, idbStore } from "../idbStore";
 import {
   type AllSettings,
-  isSettingsPlayer,
   saveSettingsToBackend,
 } from "../utils/settingsStore";
 import {
@@ -28,17 +27,11 @@ import {
   type LeagueSettings,
   type LiveColorTheme,
   type LiveLayoutConfig,
-  getIconPhotos,
   getLeagueSettings,
   getLiveColors,
   getLiveLayout,
-  getOwnerPhotos,
-  getTeamLogos,
-  saveIconPhotos,
   saveLeagueSettings,
   saveLiveColors,
-  saveOwnerPhotos,
-  saveTeamLogos,
 } from "./LandingPage";
 
 // ─── Auth guard ────────────────────────────────────────────────────────────────
@@ -162,19 +155,33 @@ function LeagueTab() {
   const [saved, setSaved] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
-  const save = () => {
+  const save = async () => {
     saveLeagueSettings(settings);
+    // Also save to IDB for offline access
+    await idbStore.setSetting("spl_league_settings", JSON.stringify(settings));
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     toast.success("League settings saved");
     // Background sync to backend (fire-and-forget, completely silent)
     if (actor) {
       setSyncing(true);
+      // Get all settings to sync
+      const [teamLogosRaw, ownerPhotosRaw, iconPhotosRaw] = await Promise.all([
+        idbStore.getSetting("spl_team_logos"),
+        idbStore.getSetting("spl_owner_photos"),
+        idbStore.getSetting("spl_icon_photos"),
+      ]);
       const allSettings: AllSettings = {
         league: settings,
-        teamLogos: getTeamLogos(),
-        ownerPhotos: getOwnerPhotos(),
-        iconPhotos: getIconPhotos(),
+        teamLogos: teamLogosRaw
+          ? (JSON.parse(teamLogosRaw) as Record<string, string>)
+          : {},
+        ownerPhotos: ownerPhotosRaw
+          ? (JSON.parse(ownerPhotosRaw) as Record<string, string>)
+          : {},
+        iconPhotos: iconPhotosRaw
+          ? (JSON.parse(iconPhotosRaw) as Record<string, string>)
+          : {},
         liveColors: getLiveColors(),
         liveLayout: getLiveLayout(),
       };
@@ -411,16 +418,11 @@ function LeagueTab() {
 // ─── Teams Tab ────────────────────────────────────────────────────────────────
 function TeamsTab() {
   const { actor } = useActor();
-  const [teams, setTeams] = useState<Team[]>([]);
+  const [teams, setTeams] = useState<IDBTeam[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
-  const [teamLogos, setTeamLogos] =
-    useState<Record<string, string>>(getTeamLogos);
-  const [ownerPhotos, setOwnerPhotos] =
-    useState<Record<string, string>>(getOwnerPhotos);
-  const [iconPhotos, setIconPhotos] =
-    useState<Record<string, string>>(getIconPhotos);
+  const [teamLogos, setTeamLogos] = useState<Record<string, string>>({});
+  const [ownerPhotos, setOwnerPhotos] = useState<Record<string, string>>({});
+  const [iconPhotos, setIconPhotos] = useState<Record<string, string>>({});
   const [localEdits, setLocalEdits] = useState<
     Record<
       string,
@@ -434,77 +436,94 @@ function TeamsTab() {
     >
   >({});
 
-  useEffect(() => {
-    if (!actor) return;
-    // retryCount is intentionally used as a re-fetch trigger
-    void retryCount;
+  const loadAll = useCallback(async () => {
     setLoading(true);
-    setLoadError(null);
-    actor
-      .getTeams()
-      .then((t) => {
-        setTeams(t.sort((a, b) => Number(a.id) - Number(b.id)));
-        const edits: typeof localEdits = {};
-        for (const team of t) {
-          edits[String(team.id)] = {
-            name: team.name,
-            ownerName: team.ownerName,
-            teamIconPlayer: team.teamIconPlayer,
-            purse: String(Number(team.purseAmountLeft)),
-            saving: false,
-          };
-        }
-        setLocalEdits(edits);
-        setLoadError(null);
-      })
-      .catch(() => {
-        setLoadError(
-          "Failed to load teams. Check your connection and try again.",
-        );
-      })
-      .finally(() => setLoading(false));
-  }, [actor, retryCount]);
+    try {
+      const [t, logosRaw, ownerRaw, iconRaw] = await Promise.all([
+        idbStore.getTeams(),
+        idbStore.getSetting("spl_team_logos"),
+        idbStore.getSetting("spl_owner_photos"),
+        idbStore.getSetting("spl_icon_photos"),
+      ]);
+      setTeams(t);
+      setTeamLogos(
+        logosRaw ? (JSON.parse(logosRaw) as Record<string, string>) : {},
+      );
+      setOwnerPhotos(
+        ownerRaw ? (JSON.parse(ownerRaw) as Record<string, string>) : {},
+      );
+      setIconPhotos(
+        iconRaw ? (JSON.parse(iconRaw) as Record<string, string>) : {},
+      );
+      const edits: typeof localEdits = {};
+      for (const team of t) {
+        edits[String(team.id)] = {
+          name: team.name,
+          ownerName: team.ownerName,
+          teamIconPlayer: team.teamIconPlayer,
+          purse: String(team.purseAmountLeft),
+          saving: false,
+        };
+      }
+      setLocalEdits(edits);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAll();
+  }, [loadAll]);
 
   const setEdit = (id: string, patch: Partial<(typeof localEdits)[string]>) => {
     setLocalEdits((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
   };
 
-  const saveTeam = async (team: Team) => {
-    if (!actor) return;
+  const saveTeam = async (team: IDBTeam) => {
     const id = String(team.id);
     const edit = localEdits[id];
     if (!edit) return;
     setEdit(id, { saving: true });
     try {
-      const r = await actor.updateTeam(
+      const newPurse = Number(edit.purse) || 0;
+      await idbStore.updateTeam(
         team.id,
         edit.name,
         edit.ownerName,
         edit.teamIconPlayer,
       );
-      if (r.__kind__ === "err") {
-        toast.error(r.err);
-      } else {
-        // Also save purse if changed
-        const newPurse = BigInt(edit.purse || "0");
-        if (String(newPurse) !== String(team.purseAmountLeft)) {
-          const pr = await actor.editTeamPurse(team.id, newPurse);
-          if (pr.__kind__ === "err") toast.error(pr.err);
+      if (newPurse !== team.purseAmountLeft) {
+        await idbStore.editTeamPurse(team.id, newPurse);
+      }
+      toast.success(`${edit.name} saved`);
+      setTeams((prev) =>
+        prev.map((t) =>
+          t.id === team.id
+            ? {
+                ...t,
+                name: edit.name,
+                ownerName: edit.ownerName,
+                teamIconPlayer: edit.teamIconPlayer,
+                purseAmountLeft: newPurse,
+              }
+            : t,
+        ),
+      );
+      // Background sync to backend
+      if (actor) {
+        try {
+          await actor.updateTeam(
+            BigInt(team.id),
+            edit.name,
+            edit.ownerName,
+            edit.teamIconPlayer,
+          );
+          if (newPurse !== team.purseAmountLeft) {
+            await actor.editTeamPurse(BigInt(team.id), BigInt(newPurse));
+          }
+        } catch {
+          /* silent */
         }
-        toast.success(`${edit.name} saved`);
-        setTeams((prev) =>
-          prev.map((t) =>
-            String(t.id) === String(team.id)
-              ? {
-                  ...t,
-                  name: edit.name,
-                  ownerName: edit.ownerName,
-                  teamIconPlayer: edit.teamIconPlayer,
-                  purseAmountLeft: BigInt(edit.purse || "0"),
-                }
-              : t,
-          ),
-        );
       }
     } catch {
       toast.error("Failed to save team");
@@ -513,47 +532,66 @@ function TeamsTab() {
     }
   };
 
-  // Helper: background-sync all current settings to backend after a photo change
-  const bgSyncSettings = (
+  // Helper: save photos to IDB and background-sync to backend
+  const savePhotos = async (
     newLogos: Record<string, string>,
     newOwner: Record<string, string>,
     newIcon: Record<string, string>,
   ) => {
-    if (!actor) return;
-    const allSettings: AllSettings = {
-      league: getLeagueSettings(),
-      teamLogos: newLogos,
-      ownerPhotos: newOwner,
-      iconPhotos: newIcon,
-      liveColors: getLiveColors(),
-      liveLayout: getLiveLayout(),
-    };
-    saveSettingsToBackend(actor, allSettings);
+    await Promise.all([
+      idbStore.setSetting("spl_team_logos", JSON.stringify(newLogos)),
+      idbStore.setSetting("spl_owner_photos", JSON.stringify(newOwner)),
+      idbStore.setSetting("spl_icon_photos", JSON.stringify(newIcon)),
+    ]);
+    // Also update localStorage for same-device LivePage reads
+    try {
+      localStorage.setItem("spl_team_logos", JSON.stringify(newLogos));
+      localStorage.setItem("spl_owner_photos", JSON.stringify(newOwner));
+      localStorage.setItem("spl_icon_photos", JSON.stringify(newIcon));
+      window.dispatchEvent(
+        new StorageEvent("storage", { key: "spl_team_logos" }),
+      );
+    } catch {
+      /* ignore */
+    }
+    // Background sync settings to backend
+    if (actor) {
+      const leagueRaw = await idbStore.getSetting("spl_league_settings");
+      const league = leagueRaw
+        ? (JSON.parse(leagueRaw) as LeagueSettings)
+        : getLeagueSettings();
+      const allSettings: AllSettings = {
+        league,
+        teamLogos: newLogos,
+        ownerPhotos: newOwner,
+        iconPhotos: newIcon,
+        liveColors: getLiveColors(),
+        liveLayout: getLiveLayout(),
+      };
+      saveSettingsToBackend(actor, allSettings);
+    }
   };
 
-  const saveLogo = (team: Team, url: string) => {
+  const saveLogo = async (team: IDBTeam, url: string) => {
     const id = String(team.id);
     const newLogos = { ...teamLogos, [id]: url };
     setTeamLogos(newLogos);
-    saveTeamLogos(newLogos);
+    await savePhotos(newLogos, ownerPhotos, iconPhotos);
     toast.success("Logo saved");
-    bgSyncSettings(newLogos, ownerPhotos, iconPhotos);
   };
 
-  const saveOwnerPhoto = (teamId: string, url: string) => {
+  const saveOwnerPhoto = async (teamId: string, url: string) => {
     const updated = { ...ownerPhotos, [teamId]: url };
     setOwnerPhotos(updated);
-    saveOwnerPhotos(updated);
+    await savePhotos(teamLogos, updated, iconPhotos);
     toast.success("Owner photo saved");
-    bgSyncSettings(teamLogos, updated, iconPhotos);
   };
 
-  const saveIconPhoto = (teamId: string, url: string) => {
+  const saveIconPhoto = async (teamId: string, url: string) => {
     const updated = { ...iconPhotos, [teamId]: url };
     setIconPhotos(updated);
-    saveIconPhotos(updated);
+    await savePhotos(teamLogos, ownerPhotos, updated);
     toast.success("Icon photo saved");
-    bgSyncSettings(teamLogos, ownerPhotos, updated);
   };
 
   if (loading) {
@@ -566,35 +604,6 @@ function TeamsTab() {
         <span className="font-broadcast text-xs tracking-widest">
           LOADING TEAMS...
         </span>
-      </div>
-    );
-  }
-
-  if (loadError) {
-    return (
-      <div className="space-y-4 max-w-sm">
-        <p
-          className="font-broadcast text-sm tracking-wide"
-          style={{ color: "oklch(0.65 0.18 25)" }}
-        >
-          {loadError}
-        </p>
-        <button
-          type="button"
-          onClick={() => {
-            setLoadError(null);
-            setRetryCount((c) => c + 1);
-          }}
-          className="flex items-center gap-2 px-5 py-2 font-broadcast tracking-widest text-xs transition-all hover:opacity-90 active:scale-95"
-          style={{
-            background:
-              "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))",
-            color: "oklch(0.08 0.02 265)",
-          }}
-        >
-          <RotateCcw size={13} />
-          RETRY
-        </button>
       </div>
     );
   }
@@ -613,7 +622,7 @@ function TeamsTab() {
           name: team.name,
           ownerName: team.ownerName,
           teamIconPlayer: team.teamIconPlayer,
-          purse: String(Number(team.purseAmountLeft)),
+          purse: String(team.purseAmountLeft),
           saving: false,
         };
         return (
@@ -643,7 +652,9 @@ function TeamsTab() {
                 />
                 <UploadBtn
                   circle
-                  onUrl={(url) => saveLogo(team, url)}
+                  onUrl={(url) => {
+                    void saveLogo(team, url);
+                  }}
                   label="LOGO"
                 />
               </div>
@@ -663,7 +674,9 @@ function TeamsTab() {
                 />
                 <UploadBtn
                   circle
-                  onUrl={(url) => saveOwnerPhoto(id, url)}
+                  onUrl={(url) => {
+                    void saveOwnerPhoto(id, url);
+                  }}
                   label="PHOTO"
                 />
               </div>
@@ -683,7 +696,9 @@ function TeamsTab() {
                 />
                 <UploadBtn
                   circle
-                  onUrl={(url) => saveIconPhoto(id, url)}
+                  onUrl={(url) => {
+                    void saveIconPhoto(id, url);
+                  }}
                   label="PHOTO"
                 />
               </div>
@@ -723,7 +738,9 @@ function TeamsTab() {
 
             <button
               type="button"
-              onClick={() => saveTeam(team)}
+              onClick={() => {
+                void saveTeam(team);
+              }}
               disabled={edit.saving}
               className="flex items-center gap-2 px-5 py-1.5 font-broadcast tracking-widest text-xs transition-all hover:opacity-90 active:scale-95 disabled:opacity-50"
               style={{
@@ -747,15 +764,15 @@ function TeamsTab() {
 }
 
 // ─── Players Tab ──────────────────────────────────────────────────────────────
-const CATEGORIES = [
-  { value: Category.batsman, label: "BATSMAN" },
-  { value: Category.bowler, label: "BOWLER" },
-  { value: Category.allrounder, label: "ALLROUNDER" },
+const CATEGORIES: { value: IDBCategory; label: string }[] = [
+  { value: "batsman", label: "BATSMAN" },
+  { value: "bowler", label: "BOWLER" },
+  { value: "allrounder", label: "ALLROUNDER" },
 ];
 
 interface PlayerEditState {
   name: string;
-  category: Category;
+  category: IDBCategory;
   basePrice: string;
   imageUrl: string;
   rating: string;
@@ -765,16 +782,14 @@ interface PlayerEditState {
 
 function PlayersTab() {
   const { actor } = useActor();
-  const [players, setPlayers] = useState<Player[]>([]);
+  const [players, setPlayers] = useState<IDBPlayer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
-  const [filter, setFilter] = useState<"all" | Category>("all");
+  const [filter, setFilter] = useState<"all" | IDBCategory>("all");
   const [edits, setEdits] = useState<Record<string, PlayerEditState>>({});
   const [showAddForm, setShowAddForm] = useState(false);
   const [newPlayer, setNewPlayer] = useState({
     name: "",
-    category: Category.batsman,
+    category: "batsman" as IDBCategory,
     basePrice: "100",
     imageUrl: "",
     rating: "3",
@@ -783,65 +798,78 @@ function PlayersTab() {
   const { upload } = useImageUpload();
 
   const fetchPlayers = useCallback(async () => {
-    if (!actor) return;
-    // retryCount is intentionally used as a re-fetch trigger
-    void retryCount;
     setLoading(true);
     try {
-      const ps = await actor.getPlayers();
-      setPlayers(ps.sort((a, b) => (a.name > b.name ? 1 : -1)));
+      const ps = await idbStore.getPlayers();
+      // Filter upcoming/unsold/live only — exclude sold players and show numbered
+      setPlayers(ps);
       setEdits((prev) => {
         const e: typeof edits = {};
         for (const p of ps) {
           const id = String(p.id);
           e[id] = {
             name: p.name,
-            category: p.category as Category,
-            basePrice: String(Number(p.basePrice)),
+            category: p.category,
+            basePrice: String(p.basePrice),
             imageUrl: p.imageUrl,
-            rating: String(Number(p.rating)),
+            rating: String(p.rating),
             saving: false,
             expanded: prev[id]?.expanded ?? false,
           };
         }
         return e;
       });
-      setLoadError(null);
-    } catch {
-      setLoadError(
-        "Failed to load players. Check your connection and try again.",
-      );
     } finally {
       setLoading(false);
     }
-  }, [actor, retryCount]);
+  }, []);
 
   useEffect(() => {
-    fetchPlayers();
+    void fetchPlayers();
   }, [fetchPlayers]);
 
   const setEdit = (id: string, patch: Partial<PlayerEditState>) => {
     setEdits((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
   };
 
-  const savePlayer = async (player: Player) => {
-    if (!actor) return;
+  const savePlayer = async (player: IDBPlayer) => {
     const id = String(player.id);
     const edit = edits[id];
     if (!edit) return;
     setEdit(id, { saving: true });
     try {
-      const r = await actor.updatePlayer(
+      const r = await idbStore.updatePlayer(
         player.id,
         edit.name,
         edit.category,
-        BigInt(edit.basePrice || "100"),
+        Number(edit.basePrice) || 100,
         edit.imageUrl,
-        BigInt(edit.rating || "3"),
+        Number(edit.rating) || 3,
       );
-      if (r.__kind__ === "err") toast.error(r.err);
+      if (!r.ok) toast.error(r.err);
       else {
         toast.success(`${edit.name} saved`);
+        // Background sync to backend
+        if (actor) {
+          try {
+            const { Category } = await import("../backend.d");
+            const catMap: Record<IDBCategory, unknown> = {
+              batsman: Category.batsman,
+              bowler: Category.bowler,
+              allrounder: Category.allrounder,
+            };
+            await actor.updatePlayer(
+              BigInt(player.id),
+              edit.name,
+              catMap[edit.category] as never,
+              BigInt(Number(edit.basePrice) || 100),
+              edit.imageUrl,
+              BigInt(Number(edit.rating) || 3),
+            );
+          } catch {
+            /* silent */
+          }
+        }
         await fetchPlayers();
       }
     } catch {
@@ -851,14 +879,21 @@ function PlayersTab() {
     }
   };
 
-  const deletePlayer = async (player: Player) => {
-    if (!actor) return;
+  const deletePlayer = async (player: IDBPlayer) => {
     if (!confirm(`Delete ${player.name}? This cannot be undone.`)) return;
     try {
-      const r = await actor.deletePlayer(player.id);
-      if (r.__kind__ === "err") toast.error(r.err);
+      const r = await idbStore.deletePlayer(player.id);
+      if (!r.ok) toast.error(r.err);
       else {
         toast.success("Player deleted");
+        // Background sync to backend
+        if (actor) {
+          try {
+            await actor.deletePlayer(BigInt(player.id));
+          } catch {
+            /* silent */
+          }
+        }
         await fetchPlayers();
       }
     } catch {
@@ -867,23 +902,42 @@ function PlayersTab() {
   };
 
   const addPlayer = async () => {
-    if (!actor) return;
     if (!newPlayer.name.trim()) return toast.error("Name required");
     setAddSaving(true);
     try {
-      const r = await actor.addPlayer(
+      const r = await idbStore.addPlayer(
         newPlayer.name.trim(),
         newPlayer.category,
-        BigInt(newPlayer.basePrice || "100"),
+        Number(newPlayer.basePrice) || 100,
         newPlayer.imageUrl,
-        BigInt(newPlayer.rating || "3"),
+        Number(newPlayer.rating) || 3,
       );
-      if (r.__kind__ === "err") toast.error(r.err);
+      if (!r.ok) toast.error(r.err);
       else {
         toast.success("Player added");
+        // Background sync to backend
+        if (actor) {
+          try {
+            const { Category } = await import("../backend.d");
+            const catMap: Record<IDBCategory, unknown> = {
+              batsman: Category.batsman,
+              bowler: Category.bowler,
+              allrounder: Category.allrounder,
+            };
+            await actor.addPlayer(
+              newPlayer.name.trim(),
+              catMap[newPlayer.category] as never,
+              BigInt(Number(newPlayer.basePrice) || 100),
+              newPlayer.imageUrl,
+              BigInt(Number(newPlayer.rating) || 3),
+            );
+          } catch {
+            /* silent */
+          }
+        }
         setNewPlayer({
           name: "",
-          category: Category.batsman,
+          category: "batsman",
           basePrice: "100",
           imageUrl: "",
           rating: "3",
@@ -908,12 +962,8 @@ function PlayersTab() {
     }
   };
 
-  // Filter out the hidden settings player before displaying
-  const visiblePlayers = players.filter((p) => !isSettingsPlayer(p));
   const filteredPlayers =
-    filter === "all"
-      ? visiblePlayers
-      : visiblePlayers.filter((p) => p.category === filter);
+    filter === "all" ? players : players.filter((p) => p.category === filter);
 
   if (loading) {
     return (
@@ -925,35 +975,6 @@ function PlayersTab() {
         <span className="font-broadcast text-xs tracking-widest">
           LOADING PLAYERS...
         </span>
-      </div>
-    );
-  }
-
-  if (loadError) {
-    return (
-      <div className="space-y-4 max-w-sm">
-        <p
-          className="font-broadcast text-sm tracking-wide"
-          style={{ color: "oklch(0.65 0.18 25)" }}
-        >
-          {loadError}
-        </p>
-        <button
-          type="button"
-          onClick={() => {
-            setLoadError(null);
-            setRetryCount((c) => c + 1);
-          }}
-          className="flex items-center gap-2 px-5 py-2 font-broadcast tracking-widest text-xs transition-all hover:opacity-90 active:scale-95"
-          style={{
-            background:
-              "linear-gradient(135deg, oklch(0.78 0.165 85), oklch(0.65 0.14 75))",
-            color: "oklch(0.08 0.02 265)",
-          }}
-        >
-          <RotateCcw size={13} />
-          RETRY
-        </button>
       </div>
     );
   }
@@ -1071,7 +1092,7 @@ function PlayersTab() {
                     onChange={(e) =>
                       setNewPlayer((p) => ({
                         ...p,
-                        category: e.target.value as Category,
+                        category: e.target.value as IDBCategory,
                       }))
                     }
                     className="w-full px-2 py-1.5 text-sm"
@@ -1356,7 +1377,9 @@ function PlayersTab() {
                       <select
                         value={edit.category}
                         onChange={(e) =>
-                          setEdit(id, { category: e.target.value as Category })
+                          setEdit(id, {
+                            category: e.target.value as IDBCategory,
+                          })
                         }
                         className="w-full px-2 py-1.5 text-sm"
                         style={{
@@ -1600,19 +1623,35 @@ function LiveLayoutTab() {
   const [syncing, setSyncing] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
 
-  const save = () => {
+  const save = async () => {
     localStorage.setItem(LIVE_LAYOUT_KEY, JSON.stringify(layout));
+    // Also save to IDB
+    await idbStore.setSetting(LIVE_LAYOUT_KEY, JSON.stringify(layout));
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     toast.success("Live layout saved — refresh /live to apply");
     // Background sync to backend
     if (actor) {
       setSyncing(true);
+      const [logosRaw, ownerRaw, iconRaw, leagueRaw] = await Promise.all([
+        idbStore.getSetting("spl_team_logos"),
+        idbStore.getSetting("spl_owner_photos"),
+        idbStore.getSetting("spl_icon_photos"),
+        idbStore.getSetting("spl_league_settings"),
+      ]);
       const allSettings: AllSettings = {
-        league: getLeagueSettings(),
-        teamLogos: getTeamLogos(),
-        ownerPhotos: getOwnerPhotos(),
-        iconPhotos: getIconPhotos(),
+        league: leagueRaw
+          ? (JSON.parse(leagueRaw) as LeagueSettings)
+          : getLeagueSettings(),
+        teamLogos: logosRaw
+          ? (JSON.parse(logosRaw) as Record<string, string>)
+          : {},
+        ownerPhotos: ownerRaw
+          ? (JSON.parse(ownerRaw) as Record<string, string>)
+          : {},
+        iconPhotos: iconRaw
+          ? (JSON.parse(iconRaw) as Record<string, string>)
+          : {},
         liveColors: getLiveColors(),
         liveLayout: layout,
       };
@@ -1984,19 +2023,35 @@ function LiveColoursTab() {
     setColors((prev) => ({ ...prev, [key]: val }));
   };
 
-  const save = () => {
+  const save = async () => {
     saveLiveColors(colors);
+    // Also save to IDB
+    await idbStore.setSetting("spl_live_colors", JSON.stringify(colors));
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
     toast.success("Colours saved — refresh /live to apply");
     // Background sync to backend
     if (actor) {
       setSyncing(true);
+      const [logosRaw, ownerRaw, iconRaw, leagueRaw] = await Promise.all([
+        idbStore.getSetting("spl_team_logos"),
+        idbStore.getSetting("spl_owner_photos"),
+        idbStore.getSetting("spl_icon_photos"),
+        idbStore.getSetting("spl_league_settings"),
+      ]);
       const allSettings: AllSettings = {
-        league: getLeagueSettings(),
-        teamLogos: getTeamLogos(),
-        ownerPhotos: getOwnerPhotos(),
-        iconPhotos: getIconPhotos(),
+        league: leagueRaw
+          ? (JSON.parse(leagueRaw) as LeagueSettings)
+          : getLeagueSettings(),
+        teamLogos: logosRaw
+          ? (JSON.parse(logosRaw) as Record<string, string>)
+          : {},
+        ownerPhotos: ownerRaw
+          ? (JSON.parse(ownerRaw) as Record<string, string>)
+          : {},
+        iconPhotos: iconRaw
+          ? (JSON.parse(iconRaw) as Record<string, string>)
+          : {},
         liveColors: colors,
         liveLayout: getLiveLayout(),
       };

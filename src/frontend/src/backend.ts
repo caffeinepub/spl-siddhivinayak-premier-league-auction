@@ -180,6 +180,7 @@ export interface backendInterface {
     getPlayersByCategory(category: Category): Promise<Array<Player>>;
     getRemainingPurse(teamId: TeamId): Promise<Amount | null>;
     getResults(): Promise<Array<PlayerWithTeam>>;
+    getSettings(): Promise<string>;
     getTeamById(teamId: TeamId): Promise<Team | null>;
     getTeams(): Promise<Array<Team>>;
     initialize(): Promise<boolean>;
@@ -187,6 +188,7 @@ export interface backendInterface {
     placeBid(teamId: TeamId): Promise<Result>;
     putPlayerBackToAuction(playerId: PlayerId): Promise<Result>;
     resetAuction(): Promise<void>;
+    saveSettings(json: string): Promise<void>;
     selectPlayer(playerId: PlayerId): Promise<Result>;
     sellPlayer(): Promise<Result>;
     unsellPlayer(playerId: PlayerId): Promise<Result>;
@@ -435,6 +437,20 @@ export class Backend implements backendInterface {
             return from_candid_vec_n27(this._uploadFile, this._downloadFile, result);
         }
     }
+    async getSettings(): Promise<string> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getSettings();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getSettings();
+            return result;
+        }
+    }
     async getTeamById(arg0: TeamId): Promise<Team | null> {
         if (this.processError) {
             try {
@@ -530,6 +546,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.resetAuction();
+            return result;
+        }
+    }
+    async saveSettings(arg0: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.saveSettings(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.saveSettings(arg0);
             return result;
         }
     }
