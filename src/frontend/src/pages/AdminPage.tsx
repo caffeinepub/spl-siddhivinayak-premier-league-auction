@@ -1179,24 +1179,26 @@ function AdminPanel() {
       return;
     }
 
-    // Optimistic
+    // Optimistic — clear all stale auction state before setting new player
     setLocalCurrentPlayerId(playerId);
     setLocalAuctionActive(true);
-    setLocalBid(null);
+    setLocalBid(0); // Start at 0, will be updated to basePrice by IDB event
     setLocalLeadingTeamId(null);
     setUndoStack([]);
 
-    // IDB (instant)
+    // IDB (instant) — this writes the new state and fires notifyChange
     const result = await idbStore.selectPlayer(playerId);
     if (!result.ok) {
       setLocalCurrentPlayerId(null);
       setLocalAuctionActive(null);
+      setLocalBid(null);
       toast.error(result.err);
       return;
     }
-    // Clear optimistic (IDB event will re-load)
+    // Clear optimistic overrides — IDB event will re-load with real data
     setLocalCurrentPlayerId(null);
     setLocalAuctionActive(null);
+    setLocalBid(null);
     toast.success("Player selected");
 
     // Background sync
@@ -1249,31 +1251,26 @@ function AdminPanel() {
     setUndoStack((prev) => prev.slice(0, -1));
     isUndoModeRef.current = true;
 
-    // Revert IDB bid
     const prevBid = last.bid;
     const prevTeamId = last.teamId;
-    idbStore.getAuctionState().then((state) => {
-      return idbStore.getAuctionState().then(() => {
-        // Write back previous bid state
-        const updatedState = {
-          ...state,
-          currentBid: prevBid,
-          leadingTeamId: prevTeamId ?? undefined,
-        };
-        // Direct IDB write for undo
-        return Promise.resolve(updatedState);
-      });
-    });
 
+    // Update optimistic local state immediately
     setLocalBid(prevBid);
     setLocalLeadingTeamId(prevTeamId);
+
+    // Actually write the reverted bid back to IDB so live screen updates too
+    idbStore.undoBid(prevBid, prevTeamId ?? undefined).catch(() => {});
+
+    // Pause polling so IDB event loop doesn't immediately overwrite with server data
     pausePolling(5000);
+
     setTimeout(() => {
       isUndoModeRef.current = false;
       setLocalBid(null);
       setLocalLeadingTeamId(null);
       refetch();
     }, 5000);
+
     toast.info("Bid reversed. Will resync in 5 seconds.", { duration: 5000 });
   };
 

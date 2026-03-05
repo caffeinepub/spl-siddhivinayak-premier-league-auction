@@ -1,10 +1,18 @@
 import { Crown, Loader2, Star, Users, X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Player, Team } from "../backend.d";
+import type { AuctionState, Player, Team } from "../backend.d";
 import { useActor } from "../hooks/useActor";
-import { useAuctionData } from "../hooks/useAuctionData";
-import { IDB_CHANGE_EVENT, idbStore } from "../idbStore";
+import { useIdbAuctionData } from "../hooks/useIdbAuctionData";
+import {
+  type IDBAuctionState,
+  type IDBCategory,
+  type IDBPlayer,
+  type IDBStatus,
+  type IDBTeam,
+  IDB_CHANGE_EVENT,
+  idbStore,
+} from "../idbStore";
 import {
   applySettingsToLocalStorage,
   loadSettingsFromBackend,
@@ -22,8 +30,78 @@ import {
   getTeamLogos,
 } from "./LandingPage";
 
+// ─── Backend → IDB type converters ────────────────────────────────────────────
+function convertCategory(cat: unknown): IDBCategory {
+  if (typeof cat === "string") {
+    const c = cat.toLowerCase();
+    if (c === "batsman") return "batsman";
+    if (c === "bowler") return "bowler";
+    return "allrounder";
+  }
+  if (cat && typeof cat === "object") {
+    if ("batsman" in cat) return "batsman";
+    if ("bowler" in cat) return "bowler";
+  }
+  return "allrounder";
+}
+
+function convertStatus(s: unknown): IDBStatus {
+  if (typeof s === "string") {
+    const c = s.toLowerCase();
+    if (c === "upcoming") return "upcoming";
+    if (c === "live") return "live";
+    if (c === "sold") return "sold";
+    if (c === "unsold") return "unsold";
+  }
+  if (s && typeof s === "object") {
+    if ("upcoming" in s) return "upcoming";
+    if ("live" in s) return "live";
+    if ("sold" in s) return "sold";
+    if ("unsold" in s) return "unsold";
+  }
+  return "upcoming";
+}
+
+function convertTeam(t: Team): IDBTeam {
+  return {
+    id: Number(t.id),
+    name: t.name,
+    purseAmountTotal: Number(t.purseAmountTotal),
+    purseAmountLeft: Number(t.purseAmountLeft),
+    numberOfPlayers: Number(t.numberOfPlayers),
+    ownerName: t.ownerName,
+    teamIconPlayer: t.teamIconPlayer,
+    isTeamLocked: t.isTeamLocked,
+  };
+}
+
+function convertPlayer(p: Player): IDBPlayer {
+  return {
+    id: Number(p.id),
+    name: p.name,
+    category: convertCategory(p.category),
+    basePrice: Number(p.basePrice),
+    imageUrl: p.imageUrl,
+    soldPrice: p.soldPrice != null ? Number(p.soldPrice) : undefined,
+    soldTo: p.soldTo != null ? Number(p.soldTo) : undefined,
+    status: convertStatus(p.status),
+    rating: Number(p.rating),
+  };
+}
+
+function convertState(s: AuctionState): IDBAuctionState {
+  return {
+    currentPlayerId:
+      s.currentPlayerId != null ? Number(s.currentPlayerId) : undefined,
+    currentBid: Number(s.currentBid),
+    leadingTeamId:
+      s.leadingTeamId != null ? Number(s.leadingTeamId) : undefined,
+    isActive: s.isActive,
+  };
+}
+
 // ─── helpers ──────────────────────────────────────────────────────────────────
-function fmt(n: bigint | number) {
+function fmt(n: number) {
   return Number(n).toLocaleString();
 }
 
@@ -55,8 +133,8 @@ function teamInitials(name: string) {
 // ─── SOLD Overlay ─────────────────────────────────────────────────────────────
 interface SoldOverlayProps {
   visible: boolean;
-  player: Player | null;
-  team: Team | null;
+  player: IDBPlayer | null;
+  team: IDBTeam | null;
   teamLogoUrl: string;
   colors: LiveColorTheme;
 }
@@ -178,6 +256,103 @@ function SoldOverlay({
   );
 }
 
+// ─── UNSOLD Overlay ───────────────────────────────────────────────────────────
+interface UnsoldOverlayProps {
+  visible: boolean;
+  player: IDBPlayer | null;
+}
+
+function UnsoldOverlay({ visible, player }: UnsoldOverlayProps) {
+  return (
+    <AnimatePresence>
+      {visible && (
+        <motion.div
+          key="unsold-overlay"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none"
+        >
+          {/* Dark red tinted background */}
+          <div
+            className="absolute inset-0"
+            style={{ background: "oklch(0.08 0.06 25 / 0.92)" }}
+          />
+
+          {/* Panel slides down from top */}
+          <motion.div
+            initial={{ y: -100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -60, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 280, damping: 24 }}
+            className="relative z-10 flex flex-col items-center gap-5 px-16 py-12"
+            style={{
+              background: "oklch(0.08 0.06 25 / 0.97)",
+              border: "3px solid oklch(0.65 0.22 25)",
+              boxShadow:
+                "0 0 80px oklch(0.65 0.22 25 / 0.5), 0 0 160px oklch(0.65 0.22 25 / 0.2)",
+            }}
+          >
+            {/* Shaking ✗ icon */}
+            <motion.div
+              animate={{ x: [-8, 8, -8, 8, 0] }}
+              transition={{ duration: 0.5, delay: 0.15 }}
+              className="font-broadcast font-black"
+              style={{
+                fontSize: 72,
+                color: "oklch(0.65 0.22 25)",
+                textShadow: "0 0 30px oklch(0.65 0.22 25 / 0.8)",
+                lineHeight: 1,
+              }}
+            >
+              ✗
+            </motion.div>
+
+            {/* UNSOLD text - flickering red */}
+            <motion.div
+              animate={{ opacity: [1, 0.5, 1, 0.6, 1] }}
+              transition={{
+                duration: 0.7,
+                repeat: Number.POSITIVE_INFINITY,
+              }}
+              className="font-broadcast font-black tracking-widest"
+              style={{
+                fontSize: 72,
+                color: "oklch(0.72 0.22 25)",
+                textShadow:
+                  "0 0 40px oklch(0.72 0.22 25 / 0.9), 0 0 80px oklch(0.65 0.22 25 / 0.5)",
+              }}
+            >
+              UNSOLD
+            </motion.div>
+
+            {/* Subtitle */}
+            <div
+              className="font-broadcast tracking-widest"
+              style={{
+                fontSize: 14,
+                color: "oklch(0.55 0.12 25)",
+              }}
+            >
+              NO BIDS RECEIVED
+            </div>
+
+            {/* Player name */}
+            {player && (
+              <div
+                className="font-broadcast text-3xl tracking-wider"
+                style={{ color: "oklch(0.88 0.015 90)" }}
+              >
+                {player.name.toUpperCase()}
+              </div>
+            )}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 // ─── Team table row ───────────────────────────────────────────────────────────
 function TeamTableRow({
   team,
@@ -185,7 +360,7 @@ function TeamTableRow({
   logoUrl,
   colors,
 }: {
-  team: Team;
+  team: IDBTeam;
   isLeading: boolean;
   logoUrl: string;
   colors: LiveColorTheme;
@@ -284,7 +459,7 @@ interface SquadSlotProps {
   name?: string;
   photo?: string;
   category?: string;
-  soldPrice?: bigint;
+  soldPrice?: number;
   slotNumber?: number;
 }
 
@@ -427,8 +602,8 @@ function SquadPlayerSlot({
 }
 
 interface SquadTeamRowProps {
-  team: Team;
-  players: Player[];
+  team: IDBTeam;
+  players: IDBPlayer[];
   teamLogoUrl: string;
   ownerPhotoUrl: string;
   iconPhotoUrl: string;
@@ -442,8 +617,8 @@ function SquadTeamRow({
   iconPhotoUrl,
 }: SquadTeamRowProps) {
   const boughtPlayers = players
-    .filter((p) => p.status === "sold" && String(p.soldTo) === String(team.id))
-    .sort((a, b) => Number(b.soldPrice ?? 0n) - Number(a.soldPrice ?? 0n));
+    .filter((p) => p.status === "sold" && Number(p.soldTo) === Number(team.id))
+    .sort((a, b) => Number(b.soldPrice ?? 0) - Number(a.soldPrice ?? 0));
 
   const isLocked = team.isTeamLocked;
 
@@ -558,14 +733,105 @@ function SquadTeamRow({
   );
 }
 
+// ─── Connection indicator ──────────────────────────────────────────────────────
+function ConnectionDot({
+  backendOnline,
+  isLoading,
+}: {
+  backendOnline: boolean;
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <Loader2
+          size={10}
+          className="animate-spin"
+          style={{ color: "oklch(0.75 0.12 82)" }}
+        />
+        <span
+          className="font-broadcast tracking-widest"
+          style={{ fontSize: 9, color: "oklch(0.55 0.02 90)" }}
+        >
+          LOADING...
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-1.5">
+      <div
+        className="w-2 h-2 rounded-full flex-shrink-0"
+        style={{
+          background: backendOnline
+            ? "oklch(0.65 0.18 140)"
+            : "oklch(0.75 0.14 82)",
+          boxShadow: backendOnline
+            ? "0 0 6px oklch(0.65 0.18 140 / 0.8)"
+            : "0 0 6px oklch(0.75 0.14 82 / 0.6)",
+        }}
+      />
+      <span
+        className="font-broadcast tracking-widest"
+        style={{
+          fontSize: 9,
+          color: backendOnline ? "oklch(0.65 0.18 140)" : "oklch(0.75 0.14 82)",
+        }}
+      >
+        {backendOnline ? "IDB SYNC" : "LOCAL"}
+      </span>
+    </div>
+  );
+}
+
 // ─── Main LivePage ────────────────────────────────────────────────────────────
 export default function LivePage() {
-  // Use 1500ms polling on the live screen so bid updates appear within ~1.5s
-  const { auctionState, teams, players, isLoading, error, refetch } =
-    useAuctionData(1500);
-  // useActor for cross-device settings sync (projector device has empty localStorage)
-  const { actor } = useActor();
+  // Primary source: IDB (instant, works offline on same device via BroadcastChannel)
+  const idbData = useIdbAuctionData();
+  const { teams, players, auctionState, isLoading } = idbData;
 
+  // Secondary source: backend poll (for cross-device sync to projector laptop)
+  const { actor } = useActor();
+  const [backendOnline, setBackendOnline] = useState(false);
+
+  // Background backend poll — writes to IDB, never blocks UI
+  // For the PROJECTOR device: this is the primary sync mechanism.
+  // For the ADMIN device: seedFromBackend will skip overwriting active auction state.
+  useEffect(() => {
+    if (!actor) return;
+
+    const poll = async () => {
+      try {
+        const [stateData, teamsData, playersData] = await Promise.all([
+          actor.getAuctionState(),
+          actor.getTeams(),
+          actor.getPlayers(),
+        ]);
+
+        // Write backend data to IDB so it's available offline and via BroadcastChannel
+        // seedFromBackend will NOT overwrite if local auction is active (prevents animation bugs)
+        await idbStore.seedFromBackend(
+          teamsData.map(convertTeam),
+          playersData.map(convertPlayer),
+          convertState(stateData),
+        );
+
+        setBackendOnline(true);
+      } catch {
+        setBackendOnline(false);
+      }
+    };
+
+    // Run immediately
+    void poll();
+
+    // Poll every 2.5 seconds for cross-device sync
+    // Slightly longer interval reduces flicker on projector when auction is active
+    const interval = setInterval(() => void poll(), 2500);
+    return () => clearInterval(interval);
+  }, [actor]);
+
+  // Settings state
   const [layout, setLayout] = useState<LiveLayoutConfig>(() => getLiveLayout());
   const [colors, setColors] = useState<LiveColorTheme>(() => getLiveColors());
   const [showSquads, setShowSquads] = useState(false);
@@ -579,21 +845,35 @@ export default function LivePage() {
   const [iconPhotos, setIconPhotos] = useState<Record<string, string>>(() =>
     getIconPhotos(),
   );
+
   const sortedSquadTeams = [...teams].sort(
     (a, b) => Number(a.id) - Number(b.id),
   );
 
-  // Track sold overlay state — triggered by auction active→inactive transition
-  // Initialize to false (not null) so the first render doesn't miss transitions
+  // Track sold / unsold overlay state — triggered by auction active→inactive transition
+  // IMPORTANT: We track the state from the moment the auction goes active (player selected)
+  // until it goes inactive (sold/unsold). We only fire the overlay on true active→inactive.
+  // We do NOT fire on first render, and we reset tracking state on every new player select.
   const prevAuctionActiveRef = useRef<boolean>(false);
   const isFirstRenderRef = useRef<boolean>(true);
-  const prevLeadingTeamIdRef = useRef<string | null>(null);
-  const prevCurrentPlayerIdRef = useRef<string | null>(null);
-  const prevCurrentBidRef = useRef<bigint>(0n);
+  const prevLeadingTeamIdRef = useRef<number | null>(null);
+  const prevCurrentPlayerIdRef = useRef<number | null>(null);
+  const prevCurrentBidRef = useRef<number>(0);
+  // Track whether the current active auction has had at least one bid
+  // This prevents SOLD animation when a player is selected with 0 bids and
+  // the auction goes inactive (reset or unsold with no bids)
+  const auctionHadBidRef = useRef<boolean>(false);
+
   const [soldOverlayVisible, setSoldOverlayVisible] = useState(false);
-  const [lastSoldPlayer, setLastSoldPlayer] = useState<Player | null>(null);
-  const [lastSoldTeam, setLastSoldTeam] = useState<Team | null>(null);
+  const [lastSoldPlayer, setLastSoldPlayer] = useState<IDBPlayer | null>(null);
+  const [lastSoldTeam, setLastSoldTeam] = useState<IDBTeam | null>(null);
   const soldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [unsoldOverlayVisible, setUnsoldOverlayVisible] = useState(false);
+  const [lastUnsoldPlayer, setLastUnsoldPlayer] = useState<IDBPlayer | null>(
+    null,
+  );
+  const unsoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Apply settings from all sources into state — memoized so it can be
   // safely included in useEffect dependency arrays without causing re-renders.
@@ -617,9 +897,9 @@ export default function LivePage() {
   );
 
   // Load settings from backend on mount (and when actor becomes available).
-  // This is the key fix for the projector device: its localStorage is empty,
-  // so we pull the canonical settings from ICP and populate both state and
-  // localStorage so all subsequent localStorage reads are warm.
+  // Key fix for projector device: its localStorage is empty, so we pull the
+  // canonical settings from ICP and populate both state and localStorage so
+  // all subsequent localStorage reads are warm.
   const settingsLoadedRef = useRef(false);
   useEffect(() => {
     if (!actor || settingsLoadedRef.current) return;
@@ -784,72 +1064,108 @@ export default function LivePage() {
 
   const currentPlayer = auctionState?.currentPlayerId
     ? (players.find(
-        (p) => String(p.id) === String(auctionState.currentPlayerId),
+        (p) => Number(p.id) === Number(auctionState.currentPlayerId),
       ) ?? null)
     : null;
 
   const leadingTeam = auctionState?.leadingTeamId
-    ? (teams.find((t) => String(t.id) === String(auctionState.leadingTeamId)) ??
+    ? (teams.find((t) => Number(t.id) === Number(auctionState.leadingTeamId)) ??
       null)
     : null;
 
-  // Detect sold: auction goes from active → inactive with a non-zero bid.
+  // Detect sold / unsold: auction goes from active → inactive
   // Skip the very first render to avoid false positives on page load.
   useEffect(() => {
     if (!auctionState) return;
 
     const wasActive = prevAuctionActiveRef.current;
     const isNowActive = auctionState.isActive;
+    const prevPlayerId = prevCurrentPlayerIdRef.current;
+    const nowPlayerId =
+      auctionState.currentPlayerId != null
+        ? Number(auctionState.currentPlayerId)
+        : null;
 
-    // Only fire the sold overlay after the first render has set the initial
-    // previous state — prevents a spurious trigger on initial mount when
-    // the auction happens to already be inactive.
+    // When a new player is selected (auction becomes active), reset tracking refs
+    // This ensures stale data from a previous auction doesn't contaminate the next one
+    if (!wasActive && isNowActive) {
+      prevLeadingTeamIdRef.current = null;
+      prevCurrentBidRef.current = 0;
+      auctionHadBidRef.current = false;
+    }
+
+    // Track bids — only set true when leading team is present (an actual bid happened)
+    if (isNowActive && auctionState.leadingTeamId != null) {
+      auctionHadBidRef.current = true;
+    }
+
     if (
       !isFirstRenderRef.current &&
       wasActive === true &&
       isNowActive === false
     ) {
-      // Auction just ended — find the sold player using previously tracked IDs
       const prevLeadingId = prevLeadingTeamIdRef.current;
-      const prevPlayerId = prevCurrentPlayerIdRef.current;
       const prevBid = prevCurrentBidRef.current;
+      const hadBid = auctionHadBidRef.current;
 
-      if (prevLeadingId && prevPlayerId && prevBid > 0n) {
-        // Player was sold — prefer the updated record with status="sold"
+      // Reset the had-bid tracker for the next auction
+      auctionHadBidRef.current = false;
+
+      if (
+        hadBid &&
+        prevLeadingId != null &&
+        prevPlayerId != null &&
+        prevBid > 0
+      ) {
+        // Player was SOLD — there was at least one bid and a leading team
         const soldPlayer =
           players.find(
-            (p) => String(p.id) === prevPlayerId && p.status === "sold",
+            (p) => Number(p.id) === prevPlayerId && p.status === "sold",
           ) ??
-          players.find((p) => String(p.id) === prevPlayerId) ??
+          players.find((p) => Number(p.id) === prevPlayerId) ??
           null;
         const soldTeam =
-          teams.find((t) => String(t.id) === prevLeadingId) ?? null;
+          teams.find((t) => Number(t.id) === prevLeadingId) ?? null;
 
         setLastSoldPlayer(soldPlayer);
         setLastSoldTeam(soldTeam);
         setSoldOverlayVisible(true);
+        setUnsoldOverlayVisible(false);
 
         if (soldTimerRef.current) clearTimeout(soldTimerRef.current);
         soldTimerRef.current = setTimeout(() => {
           setSoldOverlayVisible(false);
         }, 4000);
+      } else if (prevPlayerId != null) {
+        // Player went UNSOLD — no valid bids were placed
+        const unsoldPlayer =
+          players.find((p) => Number(p.id) === prevPlayerId) ?? null;
+
+        setLastUnsoldPlayer(unsoldPlayer);
+        setUnsoldOverlayVisible(true);
+        setSoldOverlayVisible(false);
+
+        if (unsoldTimerRef.current) clearTimeout(unsoldTimerRef.current);
+        unsoldTimerRef.current = setTimeout(() => {
+          setUnsoldOverlayVisible(false);
+        }, 3500);
       }
     }
 
-    // Mark that we have processed the first render — subsequent transitions
-    // will correctly detect active→inactive changes.
+    // Mark first render processed
     isFirstRenderRef.current = false;
 
     // Track current values for next comparison
     prevAuctionActiveRef.current = isNowActive;
-    // Only update leading team ID when we have a value (preserve it for
-    // the sold detection even after the auction becomes inactive)
-    if (auctionState.leadingTeamId) {
-      prevLeadingTeamIdRef.current = String(auctionState.leadingTeamId);
+    // Only update leading team ref when it changes to a real value — don't clear on null
+    // (the null happens briefly during transitions and would break detection)
+    if (auctionState.leadingTeamId != null) {
+      prevLeadingTeamIdRef.current = Number(auctionState.leadingTeamId);
+    } else if (!isNowActive) {
+      // Auction is now inactive — reset leading team for next auction
+      prevLeadingTeamIdRef.current = null;
     }
-    prevCurrentPlayerIdRef.current = auctionState.currentPlayerId
-      ? String(auctionState.currentPlayerId)
-      : null;
+    prevCurrentPlayerIdRef.current = nowPlayerId;
     prevCurrentBidRef.current = auctionState.currentBid;
   }, [auctionState, players, teams]);
 
@@ -861,85 +1177,6 @@ export default function LivePage() {
     ? getCategoryColor(currentPlayer.category, colors)
     : "oklch(0.55 0.02 90)";
   const rp = layout.rightPanelWidth;
-
-  // Auto-retry every 3s when error with no data
-  useEffect(() => {
-    if (!error || auctionState) return;
-    const t = setInterval(() => refetch(), 3000);
-    return () => clearInterval(t);
-  }, [error, auctionState, refetch]);
-
-  if (error && !auctionState) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center broadcast-overlay">
-        <div className="flex flex-col items-center gap-6 px-8 text-center">
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{
-              duration: 1.5,
-              repeat: Number.POSITIVE_INFINITY,
-              ease: "linear",
-            }}
-            className="w-14 h-14 rounded-full flex items-center justify-center"
-            style={{
-              background: "oklch(0.78 0.165 85 / 0.15)",
-              border: "2px solid oklch(0.78 0.165 85 / 0.4)",
-            }}
-          >
-            <Loader2 size={24} style={{ color: "oklch(0.78 0.165 85)" }} />
-          </motion.div>
-          <div>
-            <p
-              className="font-broadcast tracking-widest text-lg mb-2"
-              style={{ color: "oklch(0.78 0.165 85)" }}
-            >
-              RECONNECTING...
-            </p>
-            <p className="text-sm" style={{ color: "oklch(0.55 0.02 90)" }}>
-              Server is waking up. Retrying automatically...
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={refetch}
-            className="px-6 py-2 font-broadcast tracking-widest text-sm transition-all"
-            style={{
-              background: "oklch(0.78 0.165 85 / 0.15)",
-              border: "1px solid oklch(0.78 0.165 85 / 0.5)",
-              color: "oklch(0.78 0.165 85)",
-            }}
-          >
-            RETRY NOW
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (isLoading && !auctionState) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <motion.div
-            animate={{ rotate: 360 }}
-            transition={{
-              duration: 1.5,
-              repeat: Number.POSITIVE_INFINITY,
-              ease: "linear",
-            }}
-            className="w-10 h-10 rounded-full border-2 border-t-transparent"
-            style={{ borderColor: "oklch(0.78 0.165 85)" }}
-          />
-          <p
-            className="font-broadcast tracking-widest text-sm"
-            style={{ color: "oklch(0.55 0.02 90)" }}
-          >
-            CONNECTING...
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div
@@ -973,7 +1210,10 @@ export default function LivePage() {
         colors={colors}
       />
 
-      {/* Squads Overlay — z-40 so SOLD overlay (z-50) still appears on top */}
+      {/* UNSOLD Overlay */}
+      <UnsoldOverlay visible={unsoldOverlayVisible} player={lastUnsoldPlayer} />
+
+      {/* Squads Overlay — z-40 so SOLD/UNSOLD overlay (z-50) still appears on top */}
       <AnimatePresence>
         {showSquads && (
           <motion.div
@@ -1033,6 +1273,7 @@ export default function LivePage() {
               <button
                 type="button"
                 onClick={() => setShowSquads(false)}
+                data-ocid="live.close_button"
                 className="flex items-center gap-1.5 px-3 py-1.5 transition-all hover:opacity-90 active:scale-95"
                 style={{
                   background: `${colors.goldAccent}18`,
@@ -1121,12 +1362,13 @@ export default function LivePage() {
           </div>
         </div>
 
-        {/* Right side: SQUADS button + Live indicator */}
+        {/* Right side: SQUADS button + connection + Live indicator */}
         <div className="flex items-center gap-4">
           {/* SQUADS toggle button */}
           <button
             type="button"
             onClick={() => setShowSquads((v) => !v)}
+            data-ocid="live.squads.toggle"
             className="flex items-center gap-1.5 px-3 py-1.5 transition-all hover:opacity-90 active:scale-95"
             style={{
               background: showSquads ? `${colors.goldAccent}22` : "transparent",
@@ -1145,6 +1387,9 @@ export default function LivePage() {
               {showSquads ? "CLOSE" : "SQUADS"}
             </span>
           </button>
+
+          {/* Connection indicator */}
+          <ConnectionDot backendOnline={backendOnline} isLoading={isLoading} />
 
           <div className="flex items-center gap-2">
             <motion.div
@@ -1229,8 +1474,8 @@ export default function LivePage() {
                     {/* SOLD ribbon - bottom-left diagonal */}
                     <AnimatePresence>
                       {soldOverlayVisible &&
-                        String(lastSoldPlayer?.id) ===
-                          String(currentPlayer.id) && (
+                        Number(lastSoldPlayer?.id) ===
+                          Number(currentPlayer.id) && (
                           <motion.div
                             key="sold-ribbon"
                             initial={{ opacity: 0, x: -40, y: 40 }}
@@ -1256,6 +1501,41 @@ export default function LivePage() {
                               }}
                             >
                               SOLD!
+                            </span>
+                          </motion.div>
+                        )}
+                    </AnimatePresence>
+
+                    {/* UNSOLD ribbon - top-right diagonal */}
+                    <AnimatePresence>
+                      {unsoldOverlayVisible &&
+                        Number(lastUnsoldPlayer?.id) ===
+                          Number(currentPlayer.id) && (
+                          <motion.div
+                            key="unsold-ribbon"
+                            initial={{ opacity: 0, x: 40, y: -40 }}
+                            animate={{ opacity: 1, x: 0, y: 0 }}
+                            exit={{ opacity: 0 }}
+                            className="absolute top-0 right-0"
+                            style={{
+                              width: "180%",
+                              transform:
+                                "rotate(-35deg) translateX(20%) translateY(-40%)",
+                              transformOrigin: "top right",
+                              background:
+                                "linear-gradient(135deg, oklch(0.65 0.22 25), oklch(0.45 0.18 25))",
+                              padding: "6px 0",
+                              textAlign: "center",
+                            }}
+                          >
+                            <span
+                              className="font-broadcast font-black tracking-widest"
+                              style={{
+                                fontSize: 18,
+                                color: "oklch(0.95 0.01 90)",
+                              }}
+                            >
+                              UNSOLD
                             </span>
                           </motion.div>
                         )}
@@ -1468,7 +1748,7 @@ export default function LivePage() {
                 key={String(team.id)}
                 team={team}
                 isLeading={
-                  String(team.id) === String(auctionState?.leadingTeamId ?? "")
+                  Number(team.id) === Number(auctionState?.leadingTeamId ?? -1)
                 }
                 logoUrl={teamLogos[String(team.id)] ?? ""}
                 colors={colors}
@@ -1489,7 +1769,7 @@ export default function LivePage() {
           <div className="flex gap-2 min-w-max">
             {sortedTeams.map((team) => {
               const isLeading =
-                String(team.id) === String(auctionState?.leadingTeamId ?? "");
+                Number(team.id) === Number(auctionState?.leadingTeamId ?? -1);
               const logoUrl = teamLogos[String(team.id)] ?? "";
               return (
                 <div

@@ -78,11 +78,19 @@ function notifyChange() {
 
 // ─── DB Setup ─────────────────────────────────────────────────────────────────
 const DB_NAME = "spl_auction_db";
-const DB_VERSION = 1;
+const DB_VERSION = 2; // Bumped to ensure schema is current
 const STORE_TEAMS = "spl_teams";
 const STORE_PLAYERS = "spl_players";
 const STORE_AUCTION = "spl_auction";
 const STORE_SETTINGS = "spl_settings";
+
+// Request persistent storage (5GB+ available on supported browsers)
+// This prevents the browser from evicting IndexedDB data under storage pressure
+if (typeof navigator !== "undefined" && navigator.storage?.persist) {
+  navigator.storage.persist().catch(() => {
+    // ignore — not critical
+  });
+}
 
 let dbInstance: IDBDatabase | null = null;
 
@@ -745,6 +753,26 @@ export const idbStore = {
     notifyChange();
   },
 
+  /**
+   * Revert the auction bid counter to a previous value.
+   * Used by the admin's UNDO BID button — writes directly to IDB so the
+   * live screen (which reads from IDB) immediately reflects the reversal.
+   */
+  async undoBid(prevBid: number, prevTeamId?: number): Promise<IDBResult> {
+    const state = await this.getAuctionState();
+    if (!state.isActive) return { ok: false, err: "No active auction" };
+
+    await dbPut(STORE_AUCTION, {
+      key: "state",
+      ...state,
+      currentBid: prevBid,
+      leadingTeamId: prevTeamId,
+    });
+
+    notifyChange();
+    return { ok: true };
+  },
+
   async editTeamPurse(teamId: number, newPurse: number): Promise<IDBResult> {
     const team = await dbGet<IDBTeam>(STORE_TEAMS, teamId);
     if (!team) return { ok: false, err: "Team not found" };
@@ -865,6 +893,10 @@ export const idbStore = {
   /**
    * Bulk-write teams and players from the backend — used to seed IDB
    * from backend data on first connection.
+   *
+   * CRITICAL: Never overwrites IDB auction state if a local auction is active.
+   * This prevents the backend poll from stomping on local optimistic bid state,
+   * which was causing the SOLD animation to fire on every bid and on player select.
    */
   async seedFromBackend(
     teams: IDBTeam[],
@@ -872,12 +904,37 @@ export const idbStore = {
     state: IDBAuctionState,
   ): Promise<void> {
     try {
-      if (teams.length > 0) await dbPutMultiple(STORE_TEAMS, teams);
-      if (players.length > 0) await dbPutMultiple(STORE_PLAYERS, players);
-      await dbPut(STORE_AUCTION, { key: "state", ...state });
+      // Check current local state before overwriting
+      const localState = await this.getAuctionState();
+
+      // If local has an active auction, only update teams/players — never touch auction state.
+      // This prevents the live screen from flickering SOLD when the backend hasn't caught
+      // up yet with the admin's local optimistic state.
+      if (localState.isActive) {
+        // Only sync teams and players (purse updates, etc.) from backend
+        if (teams.length > 0) await dbPutMultiple(STORE_TEAMS, teams);
+        // For players: only update sold/upcoming players, not the currently live player
+        const playersToUpdate = players.filter(
+          (p) => p.id !== localState.currentPlayerId,
+        );
+        if (playersToUpdate.length > 0)
+          await dbPutMultiple(STORE_PLAYERS, playersToUpdate);
+      } else {
+        // No local active auction — safe to fully sync everything from backend
+        if (teams.length > 0) await dbPutMultiple(STORE_TEAMS, teams);
+        if (players.length > 0) await dbPutMultiple(STORE_PLAYERS, players);
+        await dbPut(STORE_AUCTION, { key: "state", ...state });
+      }
+
       // Mark as initialized so we don't overwrite with seed data
       await dbPut(STORE_SETTINGS, { key: INIT_KEY, value: "1" });
-      notifyChange();
+      // Only notify if auction is NOT active — during active auction, the live
+      // screen already has correct data from local writes and we don't want
+      // backend polls to cause unnecessary re-renders that could interfere
+      // with animation tracking refs
+      if (!localState.isActive) {
+        notifyChange();
+      }
     } catch {
       // ignore
     }

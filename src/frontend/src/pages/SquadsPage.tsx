@@ -1,8 +1,8 @@
 import { Copy, Crown, Star } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { Player, Team } from "../backend.d";
-import { useAuctionData } from "../hooks/useAuctionData";
+import { useIdbAuctionData } from "../hooks/useIdbAuctionData";
+import type { IDBPlayer, IDBTeam } from "../idbStore";
 import {
   getIconPhotos,
   getLeagueSettings,
@@ -11,7 +11,7 @@ import {
 } from "./LandingPage";
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
-function fmt(n: bigint | number) {
+function fmt(n: number) {
   return Number(n).toLocaleString();
 }
 
@@ -38,7 +38,7 @@ interface HammerAnimData {
   playerName: string;
   teamName?: string;
   teamLogoUrl?: string;
-  soldPrice?: bigint;
+  soldPrice?: number;
 }
 
 function HammerOverlay({
@@ -167,7 +167,7 @@ function HammerOverlay({
     );
   }
 
-  // ── UNSOLD animation ──────────────────────────────────────────────────────
+  // ── UNSOLD animation — red theme, slides in from top ─────────────────────
   return (
     <AnimatePresence>
       {visible && (
@@ -178,48 +178,65 @@ function HammerOverlay({
           exit={{ opacity: 0 }}
           className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none"
         >
+          {/* Dark red tinted background */}
           <div
             className="absolute inset-0"
-            style={{ background: "oklch(0.04 0.02 265 / 0.8)" }}
+            style={{ background: "oklch(0.08 0.06 25 / 0.95)" }}
           />
+          {/* Panel slides down from top */}
           <motion.div
-            initial={{ scale: 0.5, opacity: 0, rotate: -15 }}
-            animate={{ scale: 1, opacity: 1, rotate: 0 }}
-            exit={{ scale: 1.2, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 350, damping: 20 }}
+            initial={{ y: -120, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: -80, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 280, damping: 24 }}
             className="relative z-10 flex flex-col items-center gap-5 px-12 py-10"
             style={{
-              background: "oklch(0.1 0.04 255 / 0.97)",
-              border: "3px solid oklch(0.78 0.165 85)",
-              boxShadow: "0 0 80px oklch(0.78 0.165 85 / 0.5)",
+              background: "oklch(0.08 0.06 25 / 0.97)",
+              border: "3px solid oklch(0.65 0.22 25)",
+              boxShadow:
+                "0 0 80px oklch(0.65 0.22 25 / 0.5), 0 0 160px oklch(0.65 0.22 25 / 0.2)",
             }}
           >
-            {/* Hammer emoji */}
+            {/* Shaking ✗ icon */}
             <motion.div
-              animate={{ rotate: [0, -30, 10, -15, 5, 0] }}
-              transition={{ duration: 0.6, delay: 0.1 }}
-              style={{ fontSize: 72, lineHeight: 1 }}
+              animate={{ x: [-8, 8, -8, 8, 0] }}
+              transition={{ duration: 0.5, delay: 0.15 }}
+              className="font-broadcast font-black"
+              style={{
+                fontSize: 72,
+                color: "oklch(0.65 0.22 25)",
+                textShadow: "0 0 30px oklch(0.65 0.22 25 / 0.8)",
+                lineHeight: 1,
+              }}
             >
-              🔨
+              ✗
             </motion.div>
 
-            {/* UNSOLD text */}
+            {/* UNSOLD! text — red, flickering */}
             <motion.div
-              animate={{ scale: [1, 1.1, 1] }}
+              animate={{ opacity: [1, 0.5, 1, 0.6, 1] }}
               transition={{
-                duration: 0.5,
+                duration: 0.7,
                 repeat: Number.POSITIVE_INFINITY,
-                repeatDelay: 1,
               }}
               className="font-broadcast font-black tracking-widest"
               style={{
                 fontSize: 56,
-                color: "oklch(0.78 0.165 85)",
-                textShadow: "0 0 40px oklch(0.78 0.165 85 / 0.7)",
+                color: "oklch(0.72 0.22 25)",
+                textShadow:
+                  "0 0 40px oklch(0.72 0.22 25 / 0.9), 0 0 80px oklch(0.65 0.22 25 / 0.5)",
               }}
             >
-              UNSOLD
+              UNSOLD!
             </motion.div>
+
+            {/* Subtitle */}
+            <div
+              className="font-broadcast tracking-widest"
+              style={{ fontSize: 14, color: "oklch(0.55 0.12 25)" }}
+            >
+              NO BIDS RECEIVED
+            </div>
 
             {/* Player name */}
             <div
@@ -243,7 +260,7 @@ interface PlayerSlotProps {
   name?: string;
   photo?: string;
   category?: string;
-  soldPrice?: bigint;
+  soldPrice?: number;
   slotNumber?: number;
 }
 
@@ -390,15 +407,15 @@ function TeamRow({
   ownerPhotoUrl,
   iconPhotoUrl,
 }: {
-  team: Team;
-  players: Player[];
+  team: IDBTeam;
+  players: IDBPlayer[];
   teamLogoUrl: string;
   ownerPhotoUrl: string;
   iconPhotoUrl: string;
 }) {
   const boughtPlayers = players
-    .filter((p) => p.status === "sold" && String(p.soldTo) === String(team.id))
-    .sort((a, b) => Number(b.soldPrice ?? 0n) - Number(a.soldPrice ?? 0n));
+    .filter((p) => p.status === "sold" && Number(p.soldTo) === Number(team.id))
+    .sort((a, b) => Number(b.soldPrice ?? 0) - Number(a.soldPrice ?? 0));
 
   const isLocked = team.isTeamLocked;
   const shareUrl = `${window.location.origin}/team/${team.id}`;
@@ -534,7 +551,7 @@ function TeamRow({
 
 // ─── Main SquadsPage ──────────────────────────────────────────────────────────
 export default function SquadsPage() {
-  const { teams, players, auctionState, isLoading } = useAuctionData(5000);
+  const { teams, players, auctionState, isLoading } = useIdbAuctionData();
   const league = getLeagueSettings();
   const [teamLogos, setTeamLogos] = useState(() => getTeamLogos());
   const [ownerPhotos, setOwnerPhotos] = useState(() => getOwnerPhotos());
@@ -560,7 +577,8 @@ export default function SquadsPage() {
   const [hammerVisible, setHammerVisible] = useState(false);
   const hammerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevAuctionActiveRef = useRef<boolean | null>(null);
-  const prevLeadingTeamRef = useRef<bigint | null>(null);
+  const prevLeadingTeamRef = useRef<number | null>(null);
+  const prevCurrentPlayerIdRef = useRef<number | null>(null);
 
   // Detect sold / unsold transitions
   useEffect(() => {
@@ -572,14 +590,15 @@ export default function SquadsPage() {
     if (wasActive === true && isActive === false) {
       // Auction just ended
       const leadingTeamId = prevLeadingTeamRef.current;
-      if (leadingTeamId && auctionState.currentBid > 0n) {
+      const prevPlayerId = prevCurrentPlayerIdRef.current;
+
+      if (leadingTeamId != null && auctionState.currentBid > 0) {
         // Player was sold
-        const team = teams.find((t) => String(t.id) === String(leadingTeamId));
-        const currentPlayer = auctionState.currentPlayerId
-          ? players.find(
-              (p) => String(p.id) === String(auctionState.currentPlayerId),
-            )
-          : null;
+        const team = teams.find((t) => Number(t.id) === Number(leadingTeamId));
+        const currentPlayer =
+          prevPlayerId != null
+            ? players.find((p) => Number(p.id) === prevPlayerId)
+            : null;
 
         setHammerData({
           type: "sold",
@@ -590,11 +609,10 @@ export default function SquadsPage() {
         });
       } else {
         // Player went unsold
-        const currentPlayer = auctionState.currentPlayerId
-          ? players.find(
-              (p) => String(p.id) === String(auctionState.currentPlayerId),
-            )
-          : null;
+        const currentPlayer =
+          prevPlayerId != null
+            ? players.find((p) => Number(p.id) === prevPlayerId)
+            : null;
         setHammerData({
           type: "unsold",
           playerName: currentPlayer?.name ?? "Player",
@@ -606,10 +624,17 @@ export default function SquadsPage() {
     }
 
     prevAuctionActiveRef.current = isActive;
-    prevLeadingTeamRef.current = auctionState.leadingTeamId ?? null;
+    prevLeadingTeamRef.current =
+      auctionState.leadingTeamId != null
+        ? Number(auctionState.leadingTeamId)
+        : null;
+    prevCurrentPlayerIdRef.current =
+      auctionState.currentPlayerId != null
+        ? Number(auctionState.currentPlayerId)
+        : null;
   }, [auctionState, teams, players, teamLogos]);
 
-  const sortedTeams = [...teams].sort((a, b) => Number(a.id) - Number(b.id));
+  const sortedTeams = [...teams].sort((a, b) => a.id - b.id);
 
   return (
     <div className="min-h-screen bg-background broadcast-overlay">
